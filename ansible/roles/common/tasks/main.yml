@@ -16,7 +16,15 @@
       - ca-certificates
       - gnupg
       - lsb-release
+      - irqbalance
+      - ethtool
     state: present
+
+- name: Enable irqbalance
+  systemd:
+    name: irqbalance
+    state: started
+    enabled: true
 
 - name: Set timezone
   timezone:

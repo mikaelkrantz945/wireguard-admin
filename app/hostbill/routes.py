@@ -70,16 +70,65 @@ def _create(req: ProvisionRequest) -> dict:
     result = peers.create_peer(
         interface_id=iface["id"],
         name=name,
-        note=f"HostBill service #{req.service_id} ({req.client_email})",
+        note=req.client_email or f"HostBill service #{req.service_id}",
         hostbill_service_id=req.service_id,
         hostbill_client_id=req.client_id,
     )
+
+    peer_id = result["peer"]["id"]
+
+    # HostBill peers are active immediately (paid service)
+    db.execute(
+        "UPDATE wg_peers SET activated = TRUE, enabled = TRUE, portal_email = %s WHERE id = %s",
+        (req.client_email, peer_id),
+    )
+    peers._sync_config(iface["id"])
+
+    # Send welcome email with portal link to set password
+    if req.client_email:
+        from ..portal import send_activation_email
+        # Use "password" method — user sets portal password, but peer is already active
+        import secrets, hashlib
+        token = secrets.token_urlsafe(48)
+        token_hash = hashlib.sha256(f"wgportal:{token}".encode()).hexdigest()
+        db.execute(
+            "UPDATE wg_peers SET activation_token = %s, activation_method = 'password' WHERE id = %s",
+            (token_hash, peer_id),
+        )
+        import os, smtplib
+        from email.mime.text import MIMEText
+        base_url = os.environ.get("BASE_URL", "https://vpn.example.com")
+        smtp_host = os.environ.get("SMTP_HOST", "localhost")
+        smtp_port = int(os.environ.get("SMTP_PORT", "25"))
+        smtp_from = os.environ.get("SMTP_FROM", "noreply@example.com")
+        portal_url = f"{base_url}/portal/ui#setup-password={token}"
+        body = f"""Hi {name},
+
+Your WireGuard VPN service is now active!
+
+Your VPN configuration is ready. Visit the portal to set your password and download your config:
+
+{portal_url}
+
+You can also scan a QR code to set up WireGuard on your phone.
+
+— WireGuard Admin
+"""
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = "Your WireGuard VPN is ready"
+        msg["From"] = smtp_from
+        msg["To"] = req.client_email
+        try:
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.send_message(msg)
+        except Exception as e:
+            print(f"[email] Failed to send welcome to {req.client_email}: {e}")
 
     return {
         "success": True,
         "action": "create",
         "service_id": req.service_id,
-        "peer_id": result["peer"]["id"],
+        "peer_id": peer_id,
         "client_config": result["client_config"],
         "ip_address": result["peer"]["allowed_ips"],
     }

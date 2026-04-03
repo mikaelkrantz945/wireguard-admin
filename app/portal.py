@@ -117,12 +117,19 @@ class ActivateGoogleRequest(BaseModel):
 
 @router.post("/activate/password")
 async def activate_with_password(req: ActivatePasswordRequest):
-    """Activate account and set password."""
+    """Activate account and set password. Also handles HostBill setup-password (already activated)."""
     token_hash = _hash(req.token)
+    # Try inactive peer first (normal activation)
     peer = db.fetchone(
         "SELECT * FROM wg_peers WHERE activation_token = %s AND activated = FALSE",
         (token_hash,),
     )
+    # Also try already-activated peer (HostBill setup-password flow)
+    if not peer:
+        peer = db.fetchone(
+            "SELECT * FROM wg_peers WHERE activation_token = %s AND activated = TRUE",
+            (token_hash,),
+        )
     if not peer:
         raise HTTPException(400, "Invalid or expired activation link")
     if len(req.password) < 8:

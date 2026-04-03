@@ -38,6 +38,8 @@ class CreatePeerRequest(BaseModel):
     persistent_keepalive: int = 25
     acl_profile_id: int = 0
     group_id: int = 0
+    portal_email: str = ""
+    portal_password: str = ""
 
 
 class UpdatePeerRequest(BaseModel):
@@ -47,6 +49,8 @@ class UpdatePeerRequest(BaseModel):
     persistent_keepalive: int | None = None
     acl_profile_id: int | None = None
     group_id: int | None = None
+    portal_email: str | None = None
+    portal_password: str | None = None
 
 
 class CreateGroupRequest(BaseModel):
@@ -240,7 +244,7 @@ async def list_interface_peers(iface_id: int):
 @router.post("/interfaces/{iface_id}/peers", status_code=201, dependencies=[Depends(verify_wireguard)])
 async def create_peer(iface_id: int, req: CreatePeerRequest):
     try:
-        return peers.create_peer(
+        result = peers.create_peer(
             interface_id=iface_id,
             name=req.name,
             note=req.note,
@@ -249,6 +253,17 @@ async def create_peer(iface_id: int, req: CreatePeerRequest):
             acl_profile_id=req.acl_profile_id,
             group_id=req.group_id,
         )
+        # Set portal credentials if provided
+        if req.portal_email:
+            import hashlib
+            updates = ["portal_email = %s"]
+            params = [req.portal_email]
+            if req.portal_password:
+                params.append(hashlib.sha256(f"wgportal:{req.portal_password}".encode()).hexdigest())
+                updates.append("portal_password_hash = %s")
+            params.append(result["peer"]["id"])
+            db.execute(f"UPDATE wg_peers SET {', '.join(updates)} WHERE id = %s", tuple(params))
+        return result
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -264,7 +279,20 @@ async def get_peer(peer_id: int):
 @router.put("/peers/{peer_id}", dependencies=[Depends(verify_wireguard)])
 async def update_peer(peer_id: int, req: UpdatePeerRequest):
     try:
-        return peers.update_peer(peer_id, req.name, req.note, req.dns, req.persistent_keepalive, req.acl_profile_id, req.group_id)
+        result = peers.update_peer(peer_id, req.name, req.note, req.dns, req.persistent_keepalive, req.acl_profile_id, req.group_id)
+        if req.portal_email is not None or req.portal_password is not None:
+            import hashlib
+            updates, params = [], []
+            if req.portal_email is not None:
+                updates.append("portal_email = %s")
+                params.append(req.portal_email)
+            if req.portal_password is not None and req.portal_password:
+                updates.append("portal_password_hash = %s")
+                params.append(hashlib.sha256(f"wgportal:{req.portal_password}".encode()).hexdigest())
+            if updates:
+                params.append(peer_id)
+                db.execute(f"UPDATE wg_peers SET {', '.join(updates)} WHERE id = %s", tuple(params))
+        return result
     except ValueError as e:
         raise HTTPException(400, str(e))
 

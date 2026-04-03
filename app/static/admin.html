@@ -237,6 +237,10 @@ tr:hover{background:#1c1f26}
     <label>ACL Profile<select id="newPeerAcl"></select></label>
     <label>DNS (override)<input type="text" id="newPeerDns" placeholder="Leave empty for default"></label>
     <label>Keepalive<input type="number" id="newPeerKeepalive" value="25"></label>
+    <hr style="border-color:#30363d;margin:.8rem 0">
+    <p style="color:#8b949e;font-size:.82rem;margin-bottom:.3rem">Portal login (optional — lets user view own config)</p>
+    <label>Portal Email<input type="email" id="newPeerPortalEmail" placeholder="user@example.com"></label>
+    <label>Portal Password<input type="text" id="newPeerPortalPass" placeholder="Set password for portal login"></label>
     <p class="err" id="newPeerErr"></p>
     <div id="newPeerResult"></div>
     <div class="actions">
@@ -273,6 +277,9 @@ tr:hover{background:#1c1f26}
     <label>ACL Profile<select id="editPeerAcl"></select></label>
     <label>DNS<input type="text" id="editPeerDns"></label>
     <label>Keepalive<input type="number" id="editPeerKeepalive"></label>
+    <hr style="border-color:#30363d;margin:.8rem 0">
+    <label>Portal Email<input type="email" id="editPeerPortalEmail"></label>
+    <label>New Portal Password<input type="text" id="editPeerPortalPass" placeholder="Leave empty to keep current"></label>
     <p class="err" id="editPeerErr"></p>
     <div class="actions">
       <button class="btn btn-danger" onclick="doDeletePeer()" style="margin-right:auto">Delete</button>
@@ -603,7 +610,7 @@ async function showCreatePeer(){
 }
 async function doCreatePeer(){
   const ifaceId=document.getElementById('newPeerIface').value;
-  const d={name:document.getElementById('newPeerName').value,note:document.getElementById('newPeerNote').value,dns:document.getElementById('newPeerDns').value,persistent_keepalive:parseInt(document.getElementById('newPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('newPeerAcl').value)||0,group_id:parseInt(document.getElementById('newPeerGroup').value)||0};
+  const d={name:document.getElementById('newPeerName').value,note:document.getElementById('newPeerNote').value,dns:document.getElementById('newPeerDns').value,persistent_keepalive:parseInt(document.getElementById('newPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('newPeerAcl').value)||0,group_id:parseInt(document.getElementById('newPeerGroup').value)||0,portal_email:document.getElementById('newPeerPortalEmail').value,portal_password:document.getElementById('newPeerPortalPass').value};
   if(!d.name){document.getElementById('newPeerErr').textContent='Name is required';return}
   const r=await api(`/wg/interfaces/${ifaceId}/peers`,{method:'POST',body:JSON.stringify(d)});
   if(r.ok){
@@ -632,12 +639,13 @@ async function showEditPeer(id){
   document.getElementById('editPeerId').value=id;
   document.getElementById('editPeerName').value=p.name;document.getElementById('editPeerNote').value=p.note||'';
   document.getElementById('editPeerDns').value=p.dns||'';document.getElementById('editPeerKeepalive').value=p.persistent_keepalive||25;
+  document.getElementById('editPeerPortalEmail').value=p.portal_email||'';document.getElementById('editPeerPortalPass').value='';
   await Promise.all([populateAclDropdown('editPeerAcl',p.acl_profile_id||0),populateGroupDropdown('editPeerGroup',p.group_id||0)]);
   document.getElementById('editPeerErr').textContent='';showModal('editPeerModal');
 }
 async function doEditPeer(){
   const id=document.getElementById('editPeerId').value;
-  const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('editPeerAcl').value)||0,group_id:parseInt(document.getElementById('editPeerGroup').value)||0};
+  const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('editPeerAcl').value)||0,group_id:parseInt(document.getElementById('editPeerGroup').value)||0,portal_email:document.getElementById('editPeerPortalEmail').value,portal_password:document.getElementById('editPeerPortalPass').value||undefined};
   const r=await api(`/wg/peers/${id}`,{method:'PUT',body:JSON.stringify(d)});
   if(r.ok){closeModal('editPeerModal');loadPeers()}else{const e=await r.json();document.getElementById('editPeerErr').textContent=e.detail||'Failed'}
 }

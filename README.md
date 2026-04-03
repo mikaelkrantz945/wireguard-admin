@@ -61,36 +61,57 @@ The API container runs with `network_mode: host` and `CAP_NET_ADMIN` so that `wg
 ## Quick start
 
 ```bash
+sudo apt install -y git ansible
 git clone https://github.com/mikaelkrantz945/wireguard-admin.git
 cd wireguard-admin
-cp .env.example .env    # Edit with your settings
-docker compose up -d --build
+./setup.sh                                                       # Answer questions
+cd ansible && sudo ansible-playbook -i inventory.yml local.yml   # Install everything
+sudo ansible-playbook -i inventory.yml certbot.yml               # SSL certificate
+```
 
-# Create first admin user
+Then bootstrap your admin account and open the GUI:
+
+```bash
 curl -X POST http://localhost:8092/admin/bootstrap \
   -H "Content-Type: application/json" \
   -d '{"firstname":"Admin","lastname":"User","email":"admin@example.com","password":"changeme1"}'
-
-# Open admin GUI
-open http://localhost:8092/admin/ui
 ```
 
-## Deployment with Ansible
+Open **https://your-domain/admin/ui** — done.
 
-Target: clean Ubuntu server with SSH access.
+## Deployment
+
+### Local server (recommended)
+
+Run the interactive setup wizard — it asks for your domain, email, WireGuard settings and generates all config files:
+
+```bash
+./setup.sh
+
+# Provision everything (Docker, WireGuard, Nginx, firewall, app)
+cd ansible && sudo ansible-playbook -i inventory.yml local.yml
+
+# SSL certificate
+sudo ansible-playbook -i inventory.yml certbot.yml
+```
+
+See **[QUICKSTART.md](QUICKSTART.md)** for the full step-by-step guide.
+
+### Remote server
+
+If deploying to a remote server, edit `ansible/inventory.yml.example` with your SSH details:
 
 ```bash
 cd ansible
 cp inventory.yml.example inventory.yml  # Edit with your server details
-
-# Full server provisioning (packages, Docker, WireGuard, Nginx, app)
 ansible-playbook -i inventory.yml site.yml
-
-# SSL certificate
 ansible-playbook -i inventory.yml certbot.yml
+```
 
-# Quick redeploy (git pull + rebuild)
-ansible-playbook -i inventory.yml deploy.yml
+### Quick redeploy
+
+```bash
+cd ansible && ansible-playbook -i inventory.yml deploy.yml
 ```
 
 ### Ansible roles

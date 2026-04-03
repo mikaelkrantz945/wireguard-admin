@@ -10,11 +10,17 @@
     state: absent
   notify: Reload nginx
 
-- name: Deploy nginx vhost config
+- name: Check if certbot has configured SSL
+  stat:
+    path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+  register: ssl_cert
+
+- name: Deploy nginx vhost config (only if SSL not yet configured)
   template:
     src: wireguard-admin.conf.j2
     dest: /etc/nginx/sites-available/wireguard-admin
     mode: "0644"
+  when: not ssl_cert.stat.exists
   notify: Reload nginx
 
 - name: Enable nginx vhost

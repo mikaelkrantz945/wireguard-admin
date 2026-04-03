@@ -1,0 +1,35 @@
+---
+- name: Install nginx
+  apt:
+    name: nginx
+    state: present
+
+- name: Remove default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Deploy nginx vhost config
+  template:
+    src: wireguard-admin.conf.j2
+    dest: /etc/nginx/sites-available/wireguard-admin
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable nginx vhost
+  file:
+    src: /etc/nginx/sites-available/wireguard-admin
+    dest: /etc/nginx/sites-enabled/wireguard-admin
+    state: link
+  notify: Reload nginx
+
+- name: Test nginx config
+  command: nginx -t
+  changed_when: false
+
+- name: Enable and start nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: true

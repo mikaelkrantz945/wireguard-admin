@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WireGuard Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e1e4e8}
+.page{display:none;align-items:center;justify-content:center;height:100vh}
+.page.active{display:flex}
+.box{background:#1c1f26;padding:2rem;border-radius:8px;width:420px}
+.box h1{margin-bottom:.3rem;font-size:1.4rem}
+.box p{color:#8b949e;font-size:.85rem;margin-bottom:1rem}
+.box input{width:100%;padding:.6rem;margin:.4rem 0;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.95rem}
+.box button{width:100%;padding:.6rem;margin-top:.5rem;background:#238636;border:none;border-radius:4px;color:#fff;font-size:1rem;cursor:pointer}
+.box button:hover{background:#2ea043}
+.err{color:#f85149;margin-top:.5rem;font-size:.85rem}
+.ok{color:#3fb950;margin-top:.5rem;font-size:.85rem}
+#appView{display:none;min-height:100vh}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:.8rem 1.5rem;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:1.1rem;font-weight:600}
+.user-info{display:flex;align-items:center;gap:1rem}
+.user-info span{color:#8b949e;font-size:.85rem}
+.logout{color:#8b949e;cursor:pointer;font-size:.85rem}
+.logout:hover{color:#e1e4e8}
+nav{display:flex;gap:0;background:#161b22;border-bottom:1px solid #30363d;padding:0 1.5rem;overflow-x:auto}
+nav button{background:none;border:none;color:#8b949e;padding:.7rem 1rem;cursor:pointer;font-size:.9rem;border-bottom:2px solid transparent;white-space:nowrap}
+nav button:hover{color:#e1e4e8}
+nav button.active{color:#58a6ff;border-bottom-color:#58a6ff}
+main{padding:1.5rem;max-width:1200px}
+.tab{display:none}.tab.active{display:block}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem}
+.stat-card{background:#1c1f26;border:1px solid #30363d;border-radius:8px;padding:1rem}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#58a6ff}
+.stat-card .label{font-size:.8rem;color:#8b949e;margin-top:.2rem}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid #21262d}
+th{color:#8b949e;font-weight:600;font-size:.8rem;text-transform:uppercase}
+tr:hover{background:#1c1f26}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600}
+.badge-wireguard{background:#1f3a5f;color:#58a6ff}.badge-hostbill{background:#1f3b2f;color:#3fb950}
+.badge-all{background:#2d2040;color:#bc8cff}
+.badge-admin{background:#3b1f1f;color:#f85149}.badge-readonly{background:#1f3a5f;color:#58a6ff}
+.badge-active,.badge-up,.badge-enabled{background:#1f3b2f;color:#3fb950}
+.badge-revoked,.badge-inactive,.badge-down,.badge-disabled{background:#3b1f1f;color:#f85149}
+.badge-pending{background:#3b2f1f;color:#d29922}
+.badge-200,.badge-201{background:#1f3b2f;color:#3fb950}
+.badge-400,.badge-401,.badge-403,.badge-404{background:#3b2f1f;color:#d29922}
+.badge-500,.badge-502{background:#3b1f1f;color:#f85149}
+.toolbar{display:flex;gap:.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap}
+.toolbar input,.toolbar select{padding:.4rem .6rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.85rem}
+.toolbar input{width:200px}
+.btn{padding:.4rem .8rem;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
+.btn-primary{background:#238636;color:#fff}.btn-primary:hover{background:#2ea043}
+.btn-danger{background:#da3633;color:#fff}.btn-danger:hover{background:#f85149}
+.btn-sm{padding:.25rem .5rem;font-size:.78rem}
+.btn-secondary{background:#30363d;color:#e1e4e8}.btn-secondary:hover{background:#3d444d}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:#1c1f26;border:1px solid #30363d;border-radius:8px;padding:1.5rem;width:480px;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:1.1rem;margin-bottom:1rem}
+.modal label{display:block;font-size:.85rem;color:#8b949e;margin-top:.7rem}
+.modal input,.modal select,.modal textarea{width:100%;padding:.4rem;margin-top:.2rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8}
+.modal .actions{margin-top:1rem;display:flex;gap:.5rem;justify-content:flex-end}
+.key-display{background:#0f1117;border:1px solid #238636;border-radius:4px;padding:.8rem;margin-top:1rem;word-break:break-all;font-family:monospace;font-size:.85rem;color:#3fb950}
+.key-display .warn{color:#d29922;font-size:.78rem;margin-top:.5rem;font-family:sans-serif}
+.config-display{background:#0f1117;border:1px solid #30363d;border-radius:4px;padding:.8rem;margin-top:.5rem;white-space:pre-wrap;font-family:monospace;font-size:.82rem;color:#e1e4e8;max-height:300px;overflow-y:auto}
+.mono{font-family:monospace;font-size:.82rem}
+.empty{color:#8b949e;text-align:center;padding:2rem}
+.qr-container{text-align:center;margin:1rem 0}
+.qr-container img{border-radius:8px;background:#fff;padding:8px;max-width:250px}
+</style>
+</head>
+<body>
+
+<!-- Login Page -->
+<div class="page active" id="pgLogin">
+  <div class="box">
+    <h1>WireGuard Admin</h1>
+    <p>VPN Management Panel</p>
+    <input type="email" id="loginEmail" placeholder="Email" autocomplete="email">
+    <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password">
+    <input type="text" id="loginTotp" placeholder="2FA code (if enabled)" autocomplete="one-time-code" style="display:none;text-align:center;font-size:1.2rem;letter-spacing:.3rem">
+    <button onclick="doLogin()">Login</button>
+    <p class="err" id="loginErr"></p>
+  </div>
+</div>
+
+<!-- Force Change Password Page -->
+<div class="page" id="pgChangePass">
+  <div class="box">
+    <h1>Change Password</h1>
+    <p>You must set a new password before continuing.</p>
+    <input type="password" id="cpPass1" placeholder="New password (min 8 characters)">
+    <input type="password" id="cpPass2" placeholder="Confirm new password">
+    <button onclick="doChangePassword()">Set Password</button>
+    <p class="err" id="cpErr"></p>
+  </div>
+</div>
+
+<!-- Accept Invite Page -->
+<div class="page" id="pgInvite">
+  <div class="box">
+    <h1>Welcome!</h1>
+    <p>Set your password to activate your account.</p>
+    <input type="password" id="invPass1" placeholder="Password (min 8 characters)">
+    <input type="password" id="invPass2" placeholder="Confirm password">
+    <button onclick="doAcceptInvite()">Activate Account</button>
+    <p class="err" id="invErr"></p>
+    <p class="ok" id="invOk"></p>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="appView">
+  <header>
+    <h1>WireGuard Admin</h1>
+    <div class="user-info">
+      <span id="userLabel"></span>
+      <span class="logout" onclick="doLogout()">Logout</span>
+    </div>
+  </header>
+  <nav>
+    <button class="active" onclick="showTab('dashboard',this)">Dashboard</button>
+    <button onclick="showTab('peers',this)">Peers</button>
+    <button onclick="showTab('interfaces',this)">Interfaces</button>
+    <button onclick="showTab('keys',this)">API Keys</button>
+    <button onclick="showTab('logs',this)">Request Logs</button>
+    <button onclick="showTab('users',this)" id="navUsers" style="display:none">Users</button>
+    <button onclick="showTab('security',this)">Security</button>
+  </nav>
+  <main>
+    <!-- Dashboard -->
+    <div class="tab active" id="tab-dashboard">
+      <div class="stats" id="statsCards"></div>
+      <h3 style="margin:.7rem 0">Active Peers</h3>
+      <table><thead><tr><th>Name</th><th>IP</th><th>Endpoint</th><th>Last Handshake</th><th>Transfer</th><th>Status</th></tr></thead><tbody id="dashPeers"></tbody></table>
+    </div>
+
+    <!-- Peers -->
+    <div class="tab" id="tab-peers">
+      <div class="toolbar">
+        <select id="peerIfaceFilter" onchange="loadPeers()"></select>
+        <input type="text" id="peerFilter" placeholder="Filter peers..." oninput="filterPeers()">
+        <button class="btn btn-primary" onclick="showCreatePeer()">+ New Peer</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
+    </div>
+
+    <!-- Interfaces -->
+    <div class="tab" id="tab-interfaces">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showModal('createIfaceModal')">+ New Interface</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Subnet</th><th>Port</th><th>Endpoint</th><th>Peers</th><th>Status</th><th></th></tr></thead><tbody id="ifacesTable"></tbody></table>
+    </div>
+
+    <!-- API Keys -->
+    <div class="tab" id="tab-keys">
+      <div class="toolbar">
+        <input type="text" id="keyFilter" placeholder="Filter by customer..." oninput="loadKeys()">
+        <button class="btn btn-primary" id="btnNewKey" onclick="showModal('createKeyModal')">+ New Key</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>Prefix</th><th>Customer</th><th>Scope</th><th>Allowed IPs</th><th>Created</th><th>Last Used</th><th>Status</th><th>Note</th><th></th></tr></thead><tbody id="keysTable"></tbody></table>
+    </div>
+
+    <!-- Request Logs -->
+    <div class="tab" id="tab-logs">
+      <div class="toolbar">
+        <input type="text" id="logCustomer" placeholder="Customer...">
+        <input type="text" id="logPath" placeholder="Path filter...">
+        <select id="logLimit"><option value="50">50</option><option value="100" selected>100</option><option value="500">500</option></select>
+        <button class="btn btn-primary" onclick="loadLogs()">Search</button>
+      </div>
+      <table><thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>IP</th><th>Customer</th><th>Key</th><th>Scope</th><th>ms</th></tr></thead><tbody id="logsTable"></tbody></table>
+    </div>
+
+    <!-- Users -->
+    <div class="tab" id="tab-users">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showModal('inviteModal')">+ Invite User</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th><th>Accepted</th><th></th></tr></thead><tbody id="usersTable"></tbody></table>
+    </div>
+
+    <!-- Security -->
+    <div class="tab" id="tab-security">
+      <h3 style="margin-bottom:1rem">Two-Factor Authentication (2FA)</h3>
+      <div id="totpStatus"></div>
+    </div>
+  </main>
+</div>
+
+<!-- Create Peer Modal -->
+<div class="modal-bg" id="createPeerModal">
+  <div class="modal">
+    <h2>Create VPN Peer</h2>
+    <input type="hidden" id="newPeerIface">
+    <label>Name<input type="text" id="newPeerName" placeholder="e.g. johns-laptop"></label>
+    <label>Note<input type="text" id="newPeerNote" placeholder="Optional"></label>
+    <label>DNS (override)<input type="text" id="newPeerDns" placeholder="Leave empty for default"></label>
+    <label>Keepalive<input type="number" id="newPeerKeepalive" value="25"></label>
+    <p class="err" id="newPeerErr"></p>
+    <div id="newPeerResult"></div>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('createPeerModal')">Close</button>
+      <button class="btn btn-primary" id="createPeerBtn" onclick="doCreatePeer()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Peer Config Modal -->
+<div class="modal-bg" id="peerConfigModal">
+  <div class="modal" style="width:520px">
+    <h2>Peer Configuration: <span id="pcTitle"></span></h2>
+    <div class="qr-container"><img id="pcQr"></div>
+    <div style="display:flex;gap:.5rem;justify-content:center;margin-bottom:.5rem">
+      <button class="btn btn-primary btn-sm" onclick="downloadConfig()">Download .conf</button>
+      <button class="btn btn-secondary btn-sm" onclick="copyConfig()">Copy</button>
+    </div>
+    <div class="config-display" id="pcConfig"></div>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('peerConfigModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Peer Modal -->
+<div class="modal-bg" id="editPeerModal">
+  <div class="modal">
+    <h2>Edit Peer</h2>
+    <input type="hidden" id="editPeerId">
+    <label>Name<input type="text" id="editPeerName"></label>
+    <label>Note<input type="text" id="editPeerNote"></label>
+    <label>DNS<input type="text" id="editPeerDns"></label>
+    <label>Keepalive<input type="number" id="editPeerKeepalive"></label>
+    <p class="err" id="editPeerErr"></p>
+    <div class="actions">
+      <button class="btn btn-danger" onclick="doDeletePeer()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-secondary" onclick="closeModal('editPeerModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doEditPeer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Interface Modal -->
+<div class="modal-bg" id="createIfaceModal">
+  <div class="modal">
+    <h2>Create WireGuard Interface</h2>
+    <label>Name<input type="text" id="newIfaceName" value="wg0" placeholder="wg0"></label>
+    <label>Listen Port<input type="number" id="newIfacePort" value="51820"></label>
+    <label>Subnet<input type="text" id="newIfaceSubnet" value="10.0.0.0/24" placeholder="10.0.0.0/24"></label>
+    <label>DNS<input type="text" id="newIfaceDns" value="195.47.238.46, 195.47.238.48"></label>
+    <label>Endpoint<input type="text" id="newIfaceEndpoint" placeholder="auto"></label>
+    <label>PostUp<input type="text" id="newIfacePostUp" value="iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE"></label>
+    <label>PostDown<input type="text" id="newIfacePostDown" value="iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE"></label>
+    <p class="err" id="newIfaceErr"></p>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('createIfaceModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doCreateIface()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Key Modal -->
+<div class="modal-bg" id="createKeyModal">
+  <div class="modal">
+    <h2>Create API Key</h2>
+    <label>Customer<input type="text" id="newKeyCustomer" placeholder="e.g. acme-hosting"></label>
+    <label>Scope<select id="newKeyScope"><option value="all">all</option><option value="wireguard">wireguard</option><option value="hostbill">hostbill</option></select></label>
+    <label>Allowed IPs<input type="text" id="newKeyIPs" placeholder="1.2.3.4, 5.6.7.8 (empty = any)"></label>
+    <label>Note<input type="text" id="newKeyNote" placeholder="Optional"></label>
+    <div id="newKeyResult"></div>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('createKeyModal')">Close</button>
+      <button class="btn btn-primary" id="createKeyBtn" onclick="createKey()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Invite User Modal -->
+<div class="modal-bg" id="inviteModal">
+  <div class="modal">
+    <h2>Invite User</h2>
+    <label>First name<input type="text" id="invFirstname"></label>
+    <label>Last name<input type="text" id="invLastname"></label>
+    <label>Email<input type="email" id="invEmail"></label>
+    <label>Role<select id="invRole"><option value="readonly">Read-only</option><option value="admin">Admin</option></select></label>
+    <div id="inviteResult"></div>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('inviteModal')">Close</button>
+      <button class="btn btn-primary" id="inviteBtn" onclick="sendInvite()">Send Invite</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOTP Setup Modal -->
+<div class="modal-bg" id="totpModal">
+  <div class="modal" style="width:460px">
+    <h2>Setup Two-Factor Authentication</h2>
+    <p style="color:#8b949e;font-size:.85rem;margin:.5rem 0">Scan this QR code with Google Authenticator, Authy, or any TOTP app.</p>
+    <div class="qr-container"><img id="totpQr"></div>
+    <label style="font-size:.85rem;color:#8b949e">Or enter manually:</label>
+    <input type="text" id="totpSecret" readonly style="font-family:monospace;text-align:center;margin:.3rem 0" onclick="this.select()">
+    <label style="font-size:.85rem;color:#8b949e;margin-top:.7rem">Enter the 6-digit code from your app to verify:</label>
+    <input type="text" id="totpVerifyCode" placeholder="000000" style="text-align:center;font-size:1.3rem;letter-spacing:.4rem" maxlength="6" autocomplete="one-time-code">
+    <p class="err" id="totpErr"></p>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('totpModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="verifyTotp()">Enable 2FA</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let TOKEN=sessionStorage.getItem('tk')||'';
+let USER=JSON.parse(sessionStorage.getItem('usr')||'null');
+let allPeers=[];
+let _currentConfig='';
+let _currentPeerName='';
+
+async function api(p,o={}){
+  const h={'Content-Type':'application/json',...(o.headers||{})};
+  if(TOKEN)h['X-API-Key']=TOKEN;
+  const r=await fetch(p,{...o,headers:h});
+  if(r.status===401&&!p.includes('/auth/login')){doLogout();throw new Error('expired')}
+  return r;
+}
+
+function pg(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('appView').style.display='none';if(id==='app'){document.getElementById('appView').style.display='block'}else{document.getElementById(id).classList.add('active')}}
+function badge(t,c){return`<span class="badge badge-${c||t}">${t}</span>`}
+function ts(s){return s?s.replace('T',' ').slice(0,19):'-'}
+function fmtBytes(b){if(!b||b===0)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
+function fmtHandshake(epoch){if(!epoch)return'-';const d=Math.floor(Date.now()/1000)-epoch;if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago'}
+function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,keys:loadKeys,logs:loadLogs,users:loadUsers,security:loadSecurity})[n]?.()}
+function showModal(id){document.getElementById(id).classList.add('show')}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+
+// ── Auth ──
+async function doLogin(){
+  const e=document.getElementById('loginEmail').value,p=document.getElementById('loginPass').value,t=document.getElementById('loginTotp').value;
+  if(!e||!p)return;
+  try{
+    const r=await api('/admin/auth/login',{method:'POST',body:JSON.stringify({email:e,password:p,totp_code:t})});
+    if(!r.ok){document.getElementById('loginErr').textContent='Invalid email, password, or 2FA code';return}
+    const d=await r.json();
+    if(d.requires_totp){document.getElementById('loginTotp').style.display='';document.getElementById('loginTotp').focus();document.getElementById('loginErr').textContent='Enter your 2FA code';return}
+    TOKEN=d.token;USER=d.user;sessionStorage.setItem('tk',TOKEN);sessionStorage.setItem('usr',JSON.stringify(USER));
+    if(d.must_change_password){pg('pgChangePass')}else{showApp()}
+  }catch(x){document.getElementById('loginErr').textContent='Connection error'}
+}
+async function doChangePassword(){
+  const p1=document.getElementById('cpPass1').value,p2=document.getElementById('cpPass2').value;
+  if(p1!==p2){document.getElementById('cpErr').textContent='Passwords do not match';return}
+  if(p1.length<8){document.getElementById('cpErr').textContent='Min 8 characters';return}
+  const r=await api('/admin/auth/change-password',{method:'POST',body:JSON.stringify({password:p1})});
+  if(r.ok){showApp()}else{const e=await r.json();document.getElementById('cpErr').textContent=e.detail||'Failed'}
+}
+async function doAcceptInvite(){
+  const p1=document.getElementById('invPass1').value,p2=document.getElementById('invPass2').value;
+  if(p1!==p2){document.getElementById('invErr').textContent='Passwords do not match';return}
+  const r=await api('/admin/auth/accept-invite',{method:'POST',body:JSON.stringify({token:window._invToken,password:p1})});
+  if(r.ok){document.getElementById('invOk').textContent='Account activated! Redirecting...';document.getElementById('invErr').textContent='';setTimeout(()=>pg('pgLogin'),2000)}
+  else{const e=await r.json();document.getElementById('invErr').textContent=e.detail||'Failed'}
+}
+function doLogout(){api('/admin/auth/logout',{method:'POST'}).catch(()=>{});TOKEN='';USER=null;sessionStorage.removeItem('tk');sessionStorage.removeItem('usr');pg('pgLogin')}
+
+function showApp(){
+  pg('app');
+  document.getElementById('userLabel').textContent=`${USER.firstname} ${USER.lastname} (${USER.role})`;
+  document.getElementById('navUsers').style.display=USER.role==='admin'?'':'none';
+  document.getElementById('btnNewKey').style.display=USER.role==='admin'?'':'none';
+  loadDashboard();
+}
+
+// ── Dashboard ──
+async function loadDashboard(){
+  const[stats,ifaces]=await Promise.all([
+    api('/admin/stats').then(r=>r.json()),
+    api('/wg/interfaces').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  ]);
+  let totalPeers=0,activePeers=0,ifaceUp=0;
+  const allDashPeers=[];
+  for(const iface of ifaces){
+    totalPeers+=iface.peer_count||0;
+    if(iface.is_up)ifaceUp++;
+    const peerData=await api(`/wg/interfaces/${iface.id}/peers`).then(r=>r.ok?r.json():[]).catch(()=>[]);
+    peerData.forEach(p=>{if(p.enabled)activePeers++;allDashPeers.push(p)});
+  }
+  let c=`<div class="stat-card"><div class="val">${activePeers}</div><div class="label">Active peers</div></div>`;
+  c+=`<div class="stat-card"><div class="val">${totalPeers}</div><div class="label">Total peers</div></div>`;
+  c+=`<div class="stat-card"><div class="val">${ifaceUp}/${ifaces.length}</div><div class="label">Interfaces up</div></div>`;
+  c+=`<div class="stat-card"><div class="val">${stats.today}</div><div class="label">API requests today</div></div>`;
+  c+=`<div class="stat-card"><div class="val">${stats.today_errors}</div><div class="label">Errors today</div></div>`;
+  document.getElementById('statsCards').innerHTML=c;
+  document.getElementById('dashPeers').innerHTML=allDashPeers.length?allDashPeers.map(p=>`<tr><td>${p.name}</td><td class="mono">${p.allowed_ips}</td><td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td><td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td><td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">No peers yet</td></tr>';
+}
+
+// ── Peers ──
+async function loadPeers(){
+  const ifaces=await api('/wg/interfaces').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const sel=document.getElementById('peerIfaceFilter');
+  const prev=sel.value;
+  sel.innerHTML=ifaces.map(i=>`<option value="${i.id}">${i.name} (${i.address})</option>`).join('');
+  if(prev)sel.value=prev;
+  const ifaceId=sel.value;
+  if(!ifaceId){document.getElementById('peersTable').innerHTML='<tr><td colspan="8" class="empty">No interfaces</td></tr>';return}
+  allPeers=await api(`/wg/interfaces/${ifaceId}/peers`).then(r=>r.ok?r.json():[]).catch(()=>[]);
+  filterPeers();
+}
+function filterPeers(){
+  const q=(document.getElementById('peerFilter').value||'').toLowerCase();
+  let f=allPeers;if(q)f=f.filter(p=>p.name.toLowerCase().includes(q)||(p.note||'').toLowerCase().includes(q)||p.allowed_ips.includes(q));
+  const adm=USER&&USER.role==='admin';
+  document.getElementById('peersTable').innerHTML=f.length?f.map(p=>`<tr>
+    <td>${p.id}</td><td>${p.name}</td><td class="mono">${p.allowed_ips}</td>
+    <td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td>
+    <td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td>
+    <td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-secondary" onclick="showPeerConfig(${p.id},'${p.name}')">Config</button>
+      ${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditPeer(${p.id})">Edit</button>
+      <button class="btn btn-sm ${p.enabled?'btn-danger':'btn-primary'}" onclick="${p.enabled?'togglePeer('+p.id+',false)':'togglePeer('+p.id+',true)'}">${p.enabled?'Disable':'Enable'}</button>`:''}
+    </td></tr>`).join(''):'<tr><td colspan="8" class="empty">No peers</td></tr>';
+}
+function showCreatePeer(){
+  const ifaceId=document.getElementById('peerIfaceFilter').value;
+  if(!ifaceId){alert('Create an interface first');return}
+  document.getElementById('newPeerIface').value=ifaceId;
+  document.getElementById('newPeerName').value='';document.getElementById('newPeerNote').value='';
+  document.getElementById('newPeerDns').value='';document.getElementById('newPeerKeepalive').value='25';
+  document.getElementById('newPeerErr').textContent='';document.getElementById('newPeerResult').innerHTML='';
+  document.getElementById('createPeerBtn').style.display='';
+  showModal('createPeerModal');
+}
+async function doCreatePeer(){
+  const ifaceId=document.getElementById('newPeerIface').value;
+  const d={name:document.getElementById('newPeerName').value,note:document.getElementById('newPeerNote').value,dns:document.getElementById('newPeerDns').value,persistent_keepalive:parseInt(document.getElementById('newPeerKeepalive').value)||25};
+  if(!d.name){document.getElementById('newPeerErr').textContent='Name is required';return}
+  const r=await api(`/wg/interfaces/${ifaceId}/peers`,{method:'POST',body:JSON.stringify(d)});
+  if(r.ok){
+    const res=await r.json();
+    document.getElementById('newPeerResult').innerHTML=`<div class="qr-container"><img src="${res.qr_code}"></div><div class="config-display">${res.client_config}</div><div class="key-display"><div class="warn">Save this config — the private key cannot be shown again from the GUI.</div></div>`;
+    document.getElementById('createPeerBtn').style.display='none';loadPeers();
+  }else{const e=await r.json();document.getElementById('newPeerErr').textContent=e.detail||'Failed'}
+}
+async function showPeerConfig(id,name){
+  const[cfgR,qrR]=await Promise.all([api(`/wg/peers/${id}/config`),api(`/wg/peers/${id}/qr`)]);
+  if(!cfgR.ok)return;
+  const cfg=await cfgR.json(),qr=await qrR.json();
+  _currentConfig=cfg.config;_currentPeerName=name;
+  document.getElementById('pcTitle').textContent=name;
+  document.getElementById('pcQr').src=qr.qr_code;
+  document.getElementById('pcConfig').textContent=cfg.config;
+  showModal('peerConfigModal');
+}
+function downloadConfig(){
+  const blob=new Blob([_currentConfig],{type:'text/plain'});const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=_currentPeerName+'.conf';a.click();
+}
+function copyConfig(){navigator.clipboard.writeText(_currentConfig)}
+async function showEditPeer(id){
+  const p=await api(`/wg/peers/${id}`).then(r=>r.json());
+  document.getElementById('editPeerId').value=id;
+  document.getElementById('editPeerName').value=p.name;document.getElementById('editPeerNote').value=p.note||'';
+  document.getElementById('editPeerDns').value=p.dns||'';document.getElementById('editPeerKeepalive').value=p.persistent_keepalive||25;
+  document.getElementById('editPeerErr').textContent='';showModal('editPeerModal');
+}
+async function doEditPeer(){
+  const id=document.getElementById('editPeerId').value;
+  const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25};
+  const r=await api(`/wg/peers/${id}`,{method:'PUT',body:JSON.stringify(d)});
+  if(r.ok){closeModal('editPeerModal');loadPeers()}else{const e=await r.json();document.getElementById('editPeerErr').textContent=e.detail||'Failed'}
+}
+async function doDeletePeer(){
+  const id=document.getElementById('editPeerId').value;
+  if(!confirm('Delete this peer permanently?'))return;
+  await api(`/wg/peers/${id}`,{method:'DELETE'});closeModal('editPeerModal');loadPeers();
+}
+async function togglePeer(id,enable){
+  await api(`/wg/peers/${id}/${enable?'enable':'disable'}`,{method:'POST'});loadPeers();
+}
+
+// ── Interfaces ──
+async function loadInterfaces(){
+  const ifaces=await api('/wg/interfaces').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const adm=USER&&USER.role==='admin';
+  document.getElementById('ifacesTable').innerHTML=ifaces.length?ifaces.map(i=>`<tr>
+    <td>${i.id}</td><td class="mono">${i.name}</td><td class="mono">${i.address}</td><td class="mono">${i.subnet}</td>
+    <td>${i.listen_port}</td><td class="mono">${i.endpoint}</td><td>${i.peer_count}</td>
+    <td>${i.is_up?badge('up','up'):badge('down','down')}</td>
+    <td>${adm?`<button class="btn btn-sm ${i.is_up?'btn-danger':'btn-primary'}" onclick="toggleIface(${i.id},${i.is_up})">${i.is_up?'Down':'Up'}</button>
+    <button class="btn btn-sm btn-danger" onclick="deleteIface(${i.id})">Delete</button>`:''}</td>
+  </tr>`).join(''):'<tr><td colspan="9" class="empty">No interfaces</td></tr>';
+}
+async function doCreateIface(){
+  const d={name:document.getElementById('newIfaceName').value,listen_port:parseInt(document.getElementById('newIfacePort').value)||51820,subnet:document.getElementById('newIfaceSubnet').value,dns:document.getElementById('newIfaceDns').value,endpoint:document.getElementById('newIfaceEndpoint').value,post_up:document.getElementById('newIfacePostUp').value,post_down:document.getElementById('newIfacePostDown').value};
+  const r=await api('/wg/interfaces',{method:'POST',body:JSON.stringify(d)});
+  if(r.ok){closeModal('createIfaceModal');loadInterfaces()}else{const e=await r.json();document.getElementById('newIfaceErr').textContent=e.detail||'Failed'}
+}
+async function toggleIface(id,isUp){
+  await api(`/wg/interfaces/${id}/${isUp?'down':'up'}`,{method:'POST'});loadInterfaces();
+}
+async function deleteIface(id){if(confirm('Delete interface and all peers?')){await api(`/wg/interfaces/${id}`,{method:'DELETE'});loadInterfaces()}}
+
+// ── API Keys ──
+async function loadKeys(){
+  const f=document.getElementById('keyFilter').value;
+  const u=f?`/admin/keys?customer=${encodeURIComponent(f)}`:'/admin/keys';
+  const k=await api(u).then(r=>r.json());const adm=USER&&USER.role==='admin';
+  document.getElementById('keysTable').innerHTML=k.length?k.map(x=>`<tr><td>${x.id}</td><td class="mono">${x.key_prefix}...</td><td>${x.customer}</td><td>${badge(x.scope,x.scope)}</td><td class="mono" style="font-size:.78rem">${x.allowed_ips||'<span style="color:#8b949e">any</span>'}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.last_used)}</td><td>${x.active?badge('active','active'):badge('revoked','revoked')}</td><td>${x.note||''}</td><td>${adm?(x.active?`<button class="btn btn-danger btn-sm" onclick="revokeKey(${x.id})">Revoke</button>`:`<button class="btn btn-sm btn-secondary" onclick="deleteKey(${x.id})">Delete</button>`):''}</td></tr>`).join(''):'<tr><td colspan="10" class="empty">No keys</td></tr>';
+}
+async function createKey(){
+  const d={customer:document.getElementById('newKeyCustomer').value,scope:document.getElementById('newKeyScope').value,note:document.getElementById('newKeyNote').value,allowed_ips:document.getElementById('newKeyIPs').value};
+  if(!d.customer)return;const r=await api('/admin/keys',{method:'POST',body:JSON.stringify(d)});const res=await r.json();
+  if(r.ok){document.getElementById('newKeyResult').innerHTML=`<div class="key-display">${res.key}<div class="warn">Copy now — shown only once.</div></div>`;document.getElementById('createKeyBtn').style.display='none';loadKeys()}
+}
+async function revokeKey(id){if(confirm('Revoke?')){await api(`/admin/keys/${id}`,{method:'DELETE'});loadKeys()}}
+async function deleteKey(id){if(confirm('Delete permanently?')){await api(`/admin/keys/${id}/permanent`,{method:'DELETE'});loadKeys()}}
+
+// ── Logs ──
+async function loadLogs(){
+  const c=document.getElementById('logCustomer').value,p=document.getElementById('logPath').value,l=document.getElementById('logLimit').value;
+  let u=`/admin/logs?limit=${l}`;if(c)u+=`&customer=${encodeURIComponent(c)}`;if(p)u+=`&path=${encodeURIComponent(p)}`;
+  const logs=await api(u).then(r=>r.json());
+  document.getElementById('logsTable').innerHTML=logs.length?logs.map(x=>`<tr><td class="mono">${ts(x.ts)}</td><td>${x.method}</td><td class="mono">${x.path}</td><td>${badge(x.status,x.status)}</td><td class="mono">${x.client_ip||'-'}</td><td>${x.customer||'-'}</td><td class="mono">${x.key_prefix||'-'}</td><td>${x.scope?badge(x.scope,x.scope):'-'}</td><td>${x.duration_ms}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">No logs</td></tr>';
+}
+
+// ── Users ──
+async function loadUsers(){
+  const u=await api('/admin/users').then(r=>r.json()).catch(()=>[]);
+  document.getElementById('usersTable').innerHTML=u.length?u.map(x=>`<tr><td>${x.id}</td><td>${x.firstname} ${x.lastname}</td><td>${x.email}</td><td>${badge(x.role,x.role)}</td><td>${x.active?badge('active','active'):badge('pending','pending')}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.accepted)}</td><td>${USER.role==='admin'?`<button class="btn btn-danger btn-sm" onclick="deleteUser(${x.id})">Delete</button>`:''}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">No users</td></tr>';
+}
+async function sendInvite(){
+  const d={firstname:document.getElementById('invFirstname').value,lastname:document.getElementById('invLastname').value,email:document.getElementById('invEmail').value,role:document.getElementById('invRole').value};
+  if(!d.email)return;const r=await api('/admin/users/invite',{method:'POST',body:JSON.stringify(d)});
+  if(r.ok){document.getElementById('inviteResult').innerHTML='<p class="ok">Invite sent!</p>';loadUsers()}
+  else{const e=await r.json();document.getElementById('inviteResult').innerHTML=`<p class="err">${e.detail||'Failed'}</p>`}
+}
+async function deleteUser(id){if(confirm('Delete user?')){await api(`/admin/users/${id}`,{method:'DELETE'});loadUsers()}}
+
+// ── Security ──
+async function loadSecurity(){
+  const me=await api('/admin/auth/me').then(r=>r.json());
+  if(me.totp_enabled){
+    document.getElementById('totpStatus').innerHTML='<p style="color:#3fb950;margin-bottom:1rem">2FA is enabled</p><button class="btn btn-danger" onclick="disableTotp()">Disable 2FA</button>';
+  }else{
+    document.getElementById('totpStatus').innerHTML='<p style="color:#8b949e;margin-bottom:1rem">2FA is not enabled</p><button class="btn btn-primary" onclick="setupTotp()">Enable 2FA</button>';
+  }
+}
+async function setupTotp(){
+  const r=await api('/admin/auth/totp/setup',{method:'POST'});const d=await r.json();
+  document.getElementById('totpQr').src=d.qr_code;document.getElementById('totpSecret').value=d.secret;
+  window._totpSecret=d.secret;document.getElementById('totpErr').textContent='';showModal('totpModal');
+}
+async function verifyTotp(){
+  const code=document.getElementById('totpVerifyCode').value;
+  const r=await api('/admin/auth/totp/enable',{method:'POST',body:JSON.stringify({secret:window._totpSecret,code:code})});
+  if(r.ok){closeModal('totpModal');loadSecurity()}else{document.getElementById('totpErr').textContent='Invalid code'}
+}
+async function disableTotp(){
+  if(!confirm('Disable 2FA?'))return;
+  await api('/admin/auth/totp/disable',{method:'POST'});loadSecurity();
+}
+
+// ── Init ──
+(function init(){
+  const hash=location.hash;
+  if(hash.startsWith('#invite=')){window._invToken=hash.slice(8);pg('pgInvite');return}
+  if(TOKEN&&USER){showApp()}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+---
+- name: Setup WireGuard Admin server
+  hosts: vpndev
+  become: true
+  roles:
+    - common
+    - docker
+    - wireguard
+    - nginx
+    - certbot
+    - app

@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+*.swp
+*.swo
+.DS_Store

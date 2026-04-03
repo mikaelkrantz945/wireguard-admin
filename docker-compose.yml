@@ -1,0 +1,77 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: wgadmin-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: wgadmin
+      POSTGRES_USER: wgadmin
+      POSTGRES_PASSWORD: wgadmin
+    volumes:
+      - wgadmin-pgdata:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backup:
+    image: postgres:16-alpine
+    container_name: wgadmin-backup
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PGHOST: db
+      PGUSER: wgadmin
+      PGPASSWORD: wgadmin
+      PGDATABASE: wgadmin
+    volumes:
+      - wgadmin-backups:/backups
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Backup sidecar started. Daily at 03:00 UTC, 7-day retention."
+        while true; do
+          HOUR=$$(date -u +%H)
+          MIN=$$(date -u +%M)
+          if [ "$$HOUR" = "03" ] && [ "$$MIN" = "00" ]; then
+            FNAME="/backups/wgadmin_$$(date -u +%Y%m%d_%H%M%S).sql.gz"
+            echo "[backup] Creating $$FNAME"
+            pg_dump | gzip > "$$FNAME"
+            find /backups -name "*.sql.gz" -mtime +7 -delete
+            echo "[backup] Done. Sleeping 61s to avoid re-trigger."
+            sleep 61
+          fi
+          sleep 30
+        done
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  api:
+    build: .
+    container_name: wgadmin-api
+    restart: unless-stopped
+    network_mode: "host"
+    env_file: .env
+    depends_on:
+      - db
+    volumes:
+      - /etc/wireguard:/etc/wireguard
+    cap_add:
+      - NET_ADMIN
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  wgadmin-pgdata:
+  wgadmin-backups:

@@ -1,0 +1,37 @@
+---
+- name: Create project directory
+  file:
+    path: "{{ project_dir }}"
+    state: directory
+    owner: mikael
+    group: mikael
+    mode: "0755"
+
+- name: Clone repository
+  git:
+    repo: "{{ repo_url }}"
+    dest: "{{ project_dir }}"
+    version: main
+    accept_hostkey: true
+  become_user: mikael
+
+- name: Deploy .env file
+  template:
+    src: env.j2
+    dest: "{{ project_dir }}/.env"
+    owner: mikael
+    group: mikael
+    mode: "0600"
+
+- name: Build and start containers
+  community.docker.docker_compose_v2:
+    project_src: "{{ project_dir }}"
+    build: always
+    state: present
+
+- name: Wait for API to be available
+  uri:
+    url: "http://127.0.0.1:{{ api_port }}/health"
+    status_code: 200
+  retries: 15
+  delay: 3

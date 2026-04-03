@@ -1,0 +1,25 @@
+---
+- name: Deploy latest version
+  hosts: vpndev
+  become: true
+  tasks:
+    - name: Pull latest code
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ project_dir }}"
+        version: main
+        accept_hostkey: true
+      become_user: mikael
+
+    - name: Rebuild and restart containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ project_dir }}"
+        build: always
+        state: present
+
+    - name: Wait for API
+      uri:
+        url: "http://127.0.0.1:{{ api_port }}/health"
+        status_code: 200
+      retries: 10
+      delay: 3

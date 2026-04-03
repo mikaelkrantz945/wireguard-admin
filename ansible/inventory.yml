@@ -1,0 +1,14 @@
+all:
+  hosts:
+    vpndev:
+      ansible_host: vpndev.no-ack.net
+      ansible_user: mikael
+      ansible_become: true
+  vars:
+    project_dir: /home/mikael/wireguard-admin
+    repo_url: git@github.com:mikaelkrantz945/wireguard-admin.git
+    domain: vpndev.no-ack.net
+    contact_email: mikael@no-ack.net
+    api_port: 8092
+    wg_port: 51820
+    wg_subnet: "10.0.0.0/24"

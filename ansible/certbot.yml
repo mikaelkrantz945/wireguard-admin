@@ -1,0 +1,27 @@
+---
+- name: Setup SSL certificate
+  hosts: vpndev
+  become: true
+  tasks:
+    - name: Install certbot
+      apt:
+        name:
+          - certbot
+          - python3-certbot-nginx
+        state: present
+
+    - name: Get SSL certificate
+      command: >
+        certbot --nginx
+        -d {{ domain }}
+        --non-interactive
+        --agree-tos
+        --email {{ contact_email }}
+      register: certbot_result
+      changed_when: "'Successfully received certificate' in certbot_result.stdout"
+
+    - name: Enable certbot timer
+      systemd:
+        name: certbot.timer
+        state: started
+        enabled: true

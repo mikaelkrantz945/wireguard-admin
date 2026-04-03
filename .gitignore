@@ -5,3 +5,11 @@ __pycache__/
 *.swp
 *.swo
 .DS_Store
+
+# Production configs — never commit these
+ansible/inventory.yml
+ansible/host_vars/
+ansible/group_vars/
+*.vault
+*.pem
+*.key

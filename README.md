@@ -2,7 +2,7 @@
 
 WireGuard VPN administration system with a web-based admin GUI, REST API, per-peer ACL profiles, and HostBill script provisioning integration.
 
-Built for [No-Ack Hosting](https://noackhosting.se) to manage VPN customers through a centralized interface.
+Open-source VPN management for hosting providers and teams.
 
 ## Features
 
@@ -40,7 +40,7 @@ The API container runs with `network_mode: host` and `CAP_NET_ADMIN` so that `wg
 ## Quick start
 
 ```bash
-git clone git@github.com:mikaelkrantz945/wireguard-admin.git
+git clone https://github.com/mikaelkrantz945/wireguard-admin.git
 cd wireguard-admin
 cp .env.example .env    # Edit with your settings
 docker compose up -d --build
@@ -60,6 +60,7 @@ Target: clean Ubuntu server with SSH access.
 
 ```bash
 cd ansible
+cp inventory.yml.example inventory.yml  # Edit with your server details
 
 # Full server provisioning (packages, Docker, WireGuard, Nginx, app)
 ansible-playbook -i inventory.yml site.yml
@@ -90,16 +91,16 @@ All settings via environment variables (`.env` file):
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgresql://wgadmin:wgadmin@127.0.0.1:5432/wgadmin` | PostgreSQL connection |
 | `WG_CONFIG_DIR` | `/etc/wireguard` | WireGuard config directory |
-| `WG_DEFAULT_DNS` | `195.47.238.46, 195.47.238.48` | DNS servers for client configs |
-| `WG_DEFAULT_ENDPOINT` | `vpndev.no-ack.net` | Server endpoint for client configs |
+| `WG_DEFAULT_DNS` | `1.1.1.1, 8.8.8.8` | DNS servers for client configs |
+| `WG_DEFAULT_ENDPOINT` | `vpn.example.com` | Server endpoint for client configs |
 | `WG_DEFAULT_SUBNET` | `10.0.0.0/24` | Default subnet for new interfaces |
 | `WG_DEFAULT_PORT` | `51820` | Default WireGuard listen port |
 | `HOSTBILL_WEBHOOK_SECRET` | | Shared secret for HostBill provisioning |
 | `API_PORT` | `8092` | API listen port |
-| `SMTP_HOST` | `mx.noackinfra.se` | SMTP server for invite emails |
-| `SMTP_PORT` | `26` | SMTP port |
-| `SMTP_FROM` | `noreply@no-ack.net` | From address for invite emails |
-| `BASE_URL` | `https://vpndev.no-ack.net` | Base URL for invite links |
+| `SMTP_HOST` | `localhost` | SMTP server for invite emails |
+| `SMTP_PORT` | `25` | SMTP port |
+| `SMTP_FROM` | `noreply@example.com` | From address for invite emails |
+| `BASE_URL` | `https://vpn.example.com` | Base URL for invite links |
 
 ## ACL Profiles
 
@@ -137,7 +138,7 @@ A default "Full Access" profile is created automatically on first startup.
 
 All API endpoints require authentication via `X-API-Key` header — either a session token (from admin GUI login) or an API key created in the admin panel.
 
-**Base URL:** `https://vpndev.no-ack.net`
+**Base URL:** `https://vpn.example.com`
 
 ## Authentication & Users
 
@@ -291,7 +292,7 @@ Response:
 [
   {
     "id": 1, "name": "wg0", "address": "10.0.0.1/24", "subnet": "10.0.0.0/24",
-    "listen_port": 51820, "endpoint": "vpndev.no-ack.net:51820",
+    "listen_port": 51820, "endpoint": "vpn.example.com:51820",
     "is_up": true, "peer_count": 5
   }
 ]
@@ -307,7 +308,7 @@ curl -X POST /wg/interfaces \
     "name": "wg0",
     "listen_port": 51820,
     "subnet": "10.0.0.0/24",
-    "dns": "195.47.238.46, 195.47.238.48",
+    "dns": "1.1.1.1, 8.8.8.8",
     "post_up": "iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE",
     "post_down": "iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE"
   }'
@@ -424,7 +425,7 @@ curl /wg/peers/1/config \
 Response:
 ```json
 {
-  "config": "[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\nDNS = 195.47.238.46, 195.47.238.48\n\n[Peer]\nPublicKey = ...\nEndpoint = vpndev.no-ack.net:51820\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n"
+  "config": "[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\nDNS = 1.1.1.1, 8.8.8.8\n\n[Peer]\nPublicKey = ...\nEndpoint = vpn.example.com:51820\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n"
 }
 ```
 
@@ -632,6 +633,19 @@ Response:
   "today_by_scope": {"wireguard": 45, "admin": 38, "hostbill": 4}
 }
 ```
+
+## Contributing
+
+1. Fork the repo and create a feature branch (`git checkout -b feature/my-change`)
+2. Make your changes
+3. Push and open a pull request against `main`
+4. Wait for review and approval
+
+**Rules:**
+- All changes go through pull requests — direct pushes to `main` are blocked
+- Never commit `.env`, `inventory.yml`, secrets, API keys, or production configs
+- Copy `*.example` files and configure locally
+- Keep the single-file SPA pattern (no build tools, no frameworks)
 
 ## Tech Stack
 

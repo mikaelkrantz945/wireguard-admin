@@ -9,10 +9,10 @@ from email.mime.text import MIMEText
 
 from . import db
 
-SMTP_HOST = os.environ.get("SMTP_HOST", "mx.noackinfra.se")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "26"))
-SMTP_FROM = os.environ.get("SMTP_FROM", "noreply@no-ack.net")
-BASE_URL = os.environ.get("BASE_URL", "https://vpndev.no-ack.net")
+SMTP_HOST = os.environ.get("SMTP_HOST", "localhost")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
+SMTP_FROM = os.environ.get("SMTP_FROM", "noreply@example.com")
+BASE_URL = os.environ.get("BASE_URL", "https://vpn.example.com")
 
 
 def _hash_password(password: str) -> str:

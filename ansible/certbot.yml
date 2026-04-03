@@ -1,6 +1,6 @@
 ---
 - name: Setup SSL certificate
-  hosts: vpndev
+  hosts: all
   become: true
   tasks:
     - name: Install certbot

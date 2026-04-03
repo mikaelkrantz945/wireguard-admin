@@ -1,6 +1,6 @@
 ---
 - name: Deploy latest version
-  hosts: vpndev
+  hosts: all
   become: true
   tasks:
     - name: Pull latest code

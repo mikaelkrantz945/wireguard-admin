@@ -1,0 +1,15 @@
+all:
+  hosts:
+    vpnserver:
+      ansible_host: vpn.example.com
+      ansible_user: deploy
+      ansible_become: true
+      # ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p user@jumphost"'
+  vars:
+    project_dir: /home/deploy/wireguard-admin
+    repo_url: git@github.com:yourorg/wireguard-admin.git
+    domain: vpn.example.com
+    contact_email: admin@example.com
+    api_port: 8092
+    wg_port: 51820
+    wg_subnet: "10.0.0.0/24"

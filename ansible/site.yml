@@ -1,6 +1,6 @@
 ---
 - name: Setup WireGuard Admin server
-  hosts: vpndev
+  hosts: all
   become: true
   roles:
     - common

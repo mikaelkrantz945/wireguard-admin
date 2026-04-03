@@ -177,13 +177,18 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
     if not iface:
         raise HTTPException(400, "Interface not found")
 
+    from ..portal import send_activation_email
+
+    # Determine activation method based on provider
+    activation_method = "google" if integ["provider"] == "google_workspace" else "password"
+
     results = []
     for user in req.users:
         email = user.get("email", "")
         name = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip() or email
 
         # Skip if already imported
-        existing = db.fetchone("SELECT id FROM wg_peers WHERE note = %s", (email,))
+        existing = db.fetchone("SELECT id FROM wg_peers WHERE note = %s OR portal_email = %s", (email, email))
         if existing:
             results.append({"email": email, "status": "skipped", "reason": "already exists"})
             continue
@@ -195,7 +200,10 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
                 note=email,
                 group_id=req.group_id,
             )
-            results.append({"email": email, "status": "created", "peer_id": result["peer"]["id"]})
+            peer_id = result["peer"]["id"]
+            # Peer created as disabled — send activation email
+            send_activation_email(peer_id, email, name, activation_method)
+            results.append({"email": email, "status": "created", "peer_id": peer_id, "activation_sent": True})
         except Exception as e:
             results.append({"email": email, "status": "error", "reason": str(e)})
 

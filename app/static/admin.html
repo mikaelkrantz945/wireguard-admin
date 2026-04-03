@@ -152,10 +152,11 @@ tr:hover{background:#1c1f26}
     <div class="tab" id="tab-peers">
       <div class="toolbar">
         <select id="peerIfaceFilter" onchange="loadPeers()"></select>
+        <select id="peerStatusFilter" onchange="filterPeers()"><option value="">All</option><option value="activated">Activated</option><option value="pending">Pending activation</option><option value="disabled">Disabled</option></select>
         <input type="text" id="peerFilter" placeholder="Filter peers..." oninput="filterPeers()">
         <button class="btn btn-primary" onclick="showCreatePeer()">+ New Peer</button>
       </div>
-      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Group</th><th>ACL</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
+      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Group</th><th>ACL</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Activation</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
     </div>
 
     <!-- Interfaces -->
@@ -582,7 +583,12 @@ async function loadPeers(){
 }
 function filterPeers(){
   const q=(document.getElementById('peerFilter').value||'').toLowerCase();
-  let f=allPeers;if(q)f=f.filter(p=>p.name.toLowerCase().includes(q)||(p.note||'').toLowerCase().includes(q)||p.allowed_ips.includes(q));
+  const sf=document.getElementById('peerStatusFilter').value;
+  let f=allPeers;
+  if(q)f=f.filter(p=>p.name.toLowerCase().includes(q)||(p.note||'').toLowerCase().includes(q)||p.allowed_ips.includes(q));
+  if(sf==='activated')f=f.filter(p=>p.activated);
+  if(sf==='pending')f=f.filter(p=>!p.activated);
+  if(sf==='disabled')f=f.filter(p=>!p.enabled);
   const adm=USER&&USER.role==='admin';
   document.getElementById('peersTable').innerHTML=f.length?f.map(p=>`<tr>
     <td>${p.id}</td><td>${p.name}</td><td class="mono">${p.allowed_ips}</td>
@@ -590,12 +596,14 @@ function filterPeers(){
     <td>${badge(p.acl_profile_name||'Default','all')}</td>
     <td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td>
     <td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td>
+    <td>${p.activated?badge('activated','enabled'):badge('pending','pending')}</td>
     <td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm btn-secondary" onclick="showPeerConfig(${p.id},'${p.name}')">Config</button>
       ${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditPeer(${p.id})">Edit</button>
+      ${!p.activated?`<button class="btn btn-sm btn-primary" onclick="sendActivation(${p.id})">Send Activation</button>`:''}
       <button class="btn btn-sm ${p.enabled?'btn-danger':'btn-primary'}" onclick="${p.enabled?'togglePeer('+p.id+',false)':'togglePeer('+p.id+',true)'}">${p.enabled?'Disable':'Enable'}</button>`:''}
-    </td></tr>`).join(''):'<tr><td colspan="10" class="empty">No peers</td></tr>';
+    </td></tr>`).join(''):'<tr><td colspan="11" class="empty">No peers</td></tr>';
 }
 async function showCreatePeer(){
   const ifaceId=document.getElementById('peerIfaceFilter').value;
@@ -653,6 +661,12 @@ async function doDeletePeer(){
   const id=document.getElementById('editPeerId').value;
   if(!confirm('Delete this peer permanently?'))return;
   await api(`/wg/peers/${id}`,{method:'DELETE'});closeModal('editPeerModal');loadPeers();
+}
+async function sendActivation(id){
+  const method=confirm('Use Google activation? (OK=Google, Cancel=Email/Password)')?'google':'password';
+  const r=await api(`/portal/send-activation`,{method:'POST',body:JSON.stringify({peer_id:id,method:method})});
+  if(r.ok){const d=await r.json();alert(`Activation email sent to ${d.email} (${d.method})`);loadPeers()}
+  else{const e=await r.json();alert(e.detail||'Failed to send activation')}
 }
 async function togglePeer(id,enable){
   await api(`/wg/peers/${id}/${enable?'enable':'disable'}`,{method:'POST'});loadPeers();

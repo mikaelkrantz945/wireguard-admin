@@ -73,6 +73,30 @@ header p{color:#8b949e;font-size:.85rem}
   </div>
 </div>
 
+<!-- Activate with Password -->
+<div class="page" id="pgActivatePassword">
+  <div class="box">
+    <h1>Activate Your VPN Account</h1>
+    <p>Set a password to activate your account.</p>
+    <input type="password" id="actPass1" placeholder="Password (min 8 characters)">
+    <input type="password" id="actPass2" placeholder="Confirm password">
+    <button onclick="doActivatePassword()">Activate Account</button>
+    <p class="err" id="actPassErr"></p>
+    <p class="ok" id="actPassOk" style="color:#3fb950"></p>
+  </div>
+</div>
+
+<!-- Activate with Google -->
+<div class="page" id="pgActivateGoogle">
+  <div class="box">
+    <h1>Activate Your VPN Account</h1>
+    <p>Click below to activate your account.</p>
+    <button onclick="doActivateGoogle()">Activate Account</button>
+    <p class="err" id="actGoogleErr"></p>
+    <p class="ok" id="actGoogleOk" style="color:#3fb950"></p>
+  </div>
+</div>
+
 <!-- Main App -->
 <div id="appView">
   <header>
@@ -205,9 +229,47 @@ function downloadConfig(){
 }
 function copyConfig(){navigator.clipboard.writeText(_peerConfig)}
 
+// Activation
+let _activationToken='';
+
+async function doActivatePassword(){
+  const p1=document.getElementById('actPass1').value,p2=document.getElementById('actPass2').value;
+  if(p1!==p2){document.getElementById('actPassErr').textContent='Passwords do not match';return}
+  if(p1.length<8){document.getElementById('actPassErr').textContent='Min 8 characters';return}
+  try{
+    const r=await api('/portal/activate/password',{method:'POST',body:JSON.stringify({token:_activationToken,password:p1})});
+    if(!r.ok){const e=await r.json();document.getElementById('actPassErr').textContent=e.detail||'Failed';return}
+    const d=await r.json();
+    document.getElementById('actPassOk').textContent='Account activated! Loading your config...';
+    TOKEN=d.token;PEER=d.peer;
+    sessionStorage.setItem('ptk',TOKEN);sessionStorage.setItem('ppeer',JSON.stringify(PEER));
+    setTimeout(()=>showApp(),1000);
+  }catch(x){document.getElementById('actPassErr').textContent='Connection error'}
+}
+
+async function doActivateGoogle(){
+  try{
+    const r=await api('/portal/activate/google',{method:'POST',body:JSON.stringify({token:_activationToken})});
+    if(!r.ok){const e=await r.json();document.getElementById('actGoogleErr').textContent=e.detail||'Failed';return}
+    const d=await r.json();
+    document.getElementById('actGoogleOk').textContent='Account activated! Loading your config...';
+    TOKEN=d.token;PEER=d.peer;
+    sessionStorage.setItem('ptk',TOKEN);sessionStorage.setItem('ppeer',JSON.stringify(PEER));
+    setTimeout(()=>showApp(),1000);
+  }catch(x){document.getElementById('actGoogleErr').textContent='Connection error'}
+}
+
 // Init
 (function(){
   checkGoogleLogin();
+  const hash=location.hash;
+  if(hash.includes('activate=')){
+    const params=new URLSearchParams(hash.slice(1));
+    _activationToken=params.get('activate')||'';
+    const method=params.get('method')||'password';
+    if(method==='google'){pg('pgActivateGoogle')}else{pg('pgActivatePassword')}
+    return;
+  }
   if(TOKEN&&PEER){showApp()}
 })();
 </script>

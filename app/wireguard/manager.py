@@ -12,7 +12,7 @@ from ..config import settings
 def generate_keypair() -> tuple[str, str]:
     """Generate WireGuard private/public key pair."""
     private = subprocess.run(["wg", "genkey"], capture_output=True, text=True, check=True).stdout.strip()
-    public = subprocess.run(["wg", "genpubkey"], input=private, capture_output=True, text=True, check=True).stdout.strip()
+    public = subprocess.run(["wg", "genpubkey"], input=private + "\n", capture_output=True, text=True, check=True).stdout.strip()
     return private, public
 
 

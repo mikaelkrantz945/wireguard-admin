@@ -22,6 +22,61 @@
     state: present
     reload: true
 
+# -- Network performance tuning for WireGuard throughput --
+
+- name: Increase socket buffer max (25 MB)
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    sysctl_file: /etc/sysctl.d/99-wireguard-perf.conf
+  loop:
+    - { key: "net.core.rmem_max", value: "26214400" }
+    - { key: "net.core.wmem_max", value: "26214400" }
+    - { key: "net.core.rmem_default", value: "1048576" }
+    - { key: "net.core.wmem_default", value: "1048576" }
+    - { key: "net.core.optmem_max", value: "25165824" }
+    - { key: "net.core.netdev_max_backlog", value: "50000" }
+
+- name: Tune TCP buffers (min, default, max)
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    sysctl_file: /etc/sysctl.d/99-wireguard-perf.conf
+  loop:
+    - { key: "net.ipv4.tcp_rmem", value: "4096 1048576 26214400" }
+    - { key: "net.ipv4.tcp_wmem", value: "4096 1048576 26214400" }
+    - { key: "net.ipv4.udp_rmem_min", value: "8192" }
+    - { key: "net.ipv4.udp_wmem_min", value: "8192" }
+
+- name: TCP optimizations (BBR, fastopen, MTU probing)
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    sysctl_file: /etc/sysctl.d/99-wireguard-perf.conf
+  loop:
+    - { key: "net.ipv4.tcp_congestion_control", value: "bbr" }
+    - { key: "net.ipv4.tcp_fastopen", value: "3" }
+    - { key: "net.ipv4.tcp_mtu_probing", value: "1" }
+    - { key: "net.ipv4.tcp_slow_start_after_idle", value: "0" }
+    - { key: "net.ipv4.tcp_no_metrics_save", value: "1" }
+
+- name: Increase conntrack max for NAT
+  sysctl:
+    name: net.netfilter.nf_conntrack_max
+    value: "131072"
+    sysctl_set: true
+    state: present
+    sysctl_file: /etc/sysctl.d/99-wireguard-perf.conf
+  ignore_errors: true
+
+# -- WireGuard directory and auto-start --
+
 - name: Ensure /etc/wireguard directory exists
   file:
     path: /etc/wireguard
@@ -32,5 +87,4 @@
   systemd:
     name: wg-quick@wg0
     enabled: true
-  when: ansible_facts.services is not defined or true
   ignore_errors: true

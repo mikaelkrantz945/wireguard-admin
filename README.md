@@ -4,6 +4,8 @@ WireGuard VPN administration system with a web-based admin GUI, REST API, per-pe
 
 Open-source VPN management for hosting providers and teams.
 
+**[Quickstart Guide](QUICKSTART.md)** — Get running on a fresh Ubuntu server in under 10 minutes.
+
 ## Screenshots
 
 | | |

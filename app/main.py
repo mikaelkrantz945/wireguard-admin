@@ -11,6 +11,7 @@ from .config import settings
 from .admin import router as admin_router
 from .wireguard.routes import router as wg_router
 from .hostbill.routes import router as hostbill_router
+from .integrations.routes import router as integrations_router
 from .middleware import RequestLogMiddleware
 from . import users, db
 
@@ -32,6 +33,7 @@ app.add_middleware(RequestLogMiddleware)
 app.include_router(admin_router)
 app.include_router(wg_router)
 app.include_router(hostbill_router)
+app.include_router(integrations_router)
 
 # Serve admin UI
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

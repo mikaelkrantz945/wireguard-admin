@@ -19,16 +19,22 @@ Open-source VPN management for hosting providers and teams.
 
 ## Features
 
-- **Admin GUI** — Dark-themed single-page application for managing peers, interfaces, ACL profiles, API keys, users, and request logs
+- **Admin GUI** — Dark-themed SPA for managing peers, interfaces, ACL profiles, groups, integrations, API keys, users, and request logs
+- **User portal** — Self-service portal (`/portal/ui`) where VPN users view their config, scan QR codes, download `.conf` files
 - **Peer management** — Create, edit, enable/disable, and delete VPN peers with auto-generated keys and IP allocation
 - **QR codes** — Scan-ready QR codes for instant WireGuard mobile client setup
-- **ACL profiles** — Per-peer access control with client-side routing (AllowedIPs) and server-side iptables enforcement
+- **ACL profiles** — Per-peer access control with visual firewall rule builder (destination, protocol, ports, ACCEPT/DROP) and server-side iptables enforcement
+- **Groups** — Organize peers into groups with inherited ACL profiles
+- **Google Workspace integration** — Import users from Google Directory API with OAuth2, extensible provider framework for Azure AD/LDAP
+- **Activation flow** — Email verification with two paths: set password or Google OAuth activation
+- **Invite system** — Invite VPN users, admin (read-only), or admin (full) from the Users tab
 - **IPAM** — Automatic IP address allocation from configurable subnets
 - **API key auth** — Scoped API keys with IP ACL, SHA-256 hashed storage
 - **2FA** — Optional Google Authenticator (TOTP) for admin accounts
-- **HostBill integration** — Script provisioning webhook for automated Create/Suspend/Unsuspend/Terminate
+- **HostBill integration** — Script provisioning webhook (Create/Suspend/Unsuspend/Terminate) with instant activation and welcome email
 - **Request logging** — All API requests logged to PostgreSQL with filtering and stats
 - **Automated backups** — Daily pg_dump sidecar with 7-day retention
+- **Network tuning** — BBR congestion control, optimized buffers, irqbalance for multi-core throughput
 
 ## Architecture
 
@@ -144,6 +150,92 @@ Each rule: `destination[:ports[/protocol]]`, one per line or separated by semico
 | Internal + Web | `0.0.0.0/0, ::/0` | `10.0.0.0/8`<br>`0.0.0.0/0:80,443`<br>`0.0.0.0/0:53/udp` | Full tunnel, internal unrestricted + web + DNS |
 
 A default "Full Access" profile is created automatically on first startup.
+
+## Groups
+
+Groups organize peers and assign ACL profiles collectively. When a peer is added to a group, it inherits the group's ACL profile automatically.
+
+- Create groups in the **Groups** tab (e.g., "Customers", "Developers", "Admins")
+- Assign an ACL profile to each group
+- When creating or editing a peer, select a group — the ACL profile is inherited
+- Changing a group's ACL profile updates all peers in that group
+
+## User Portal
+
+Self-service portal at `/portal/ui` where VPN users can:
+
+- **Log in** with email + password (local credentials)
+- **Log in with Google** (if a Google Workspace integration is configured)
+- **View** their VPN configuration
+- **Scan QR code** with the WireGuard mobile app
+- **Download** `.conf` file
+
+The portal is separate from the admin panel — VPN users never see the admin interface.
+
+## Activation Flow
+
+Peers require activation before VPN access is enabled. There are two paths depending on how the account was created:
+
+### Invited or imported users
+
+```
+Admin creates peer → Activation email sent → User clicks link
+  → Password method: Set password → Account activated → Peer enabled
+  → Google method: Click activate → Account activated → Log in with Google
+```
+
+The peer is **disabled in WireGuard** until the user activates. This prevents unused peers from cluttering the config.
+
+### HostBill-provisioned users
+
+```
+HostBill calls /hostbill/provision (Create) → Peer created as ACTIVE
+  → Welcome email sent → User clicks link → Sets portal password
+  → Can view config/QR in portal
+```
+
+HostBill peers are **active immediately** (paid service). The welcome email lets users set a portal password to access their config/QR code.
+
+### Invite roles
+
+The **+ Invite User** button in the Users tab supports three roles:
+
+| Role | What happens |
+|------|-------------|
+| **VPN User** | Creates a WireGuard peer + sends activation email. Select group and activation method (password/Google) |
+| **Admin (Read-only)** | Creates an admin panel user with view-only access |
+| **Admin (Full)** | Creates an admin panel user with full write access |
+
+## Integrations
+
+Extensible identity provider framework for importing users from external systems.
+
+### Google Workspace
+
+Import users from Google Directory API:
+
+1. Go to **Integrations** tab → **+ Add Integration**
+2. Select **Google Workspace** and follow the setup instructions
+3. Enter client_id, client_secret, and workspace domain
+4. Complete the OAuth flow to connect
+5. Click **Sync & Import** → select users → choose interface + group → peers created with activation emails
+
+### Adding new providers
+
+Implement `BaseProvider` in `app/integrations/`:
+
+```python
+class MyProvider(BaseProvider):
+    provider_type = "my_provider"
+    display_name = "My Provider"
+    config_fields = [...]
+
+    def get_auth_url(self, config, redirect_uri): ...
+    def exchange_code(self, config, code, redirect_uri): ...
+    def list_users(self, config, tokens): ...
+```
+
+Register in `PROVIDERS` dict in `app/integrations/routes.py`.
 
 ---
 
@@ -619,6 +711,102 @@ curl -X POST /hostbill/provision \
 
 ```bash
 curl /hostbill/health
+```
+
+## User Portal
+
+### Login (email + password)
+
+```bash
+curl -X POST /portal/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"mypassword"}'
+```
+
+### Login (Google OAuth)
+
+```bash
+curl -X POST /portal/auth/google \
+  -H "Content-Type: application/json" \
+  -d '{"integration_id":1,"code":"google_auth_code","redirect_uri":"https://vpn.example.com/portal/ui"}'
+```
+
+### Get my config / QR
+
+```bash
+curl /portal/config -H "X-API-Key: PORTAL_TOKEN"
+curl /portal/qr -H "X-API-Key: PORTAL_TOKEN"
+```
+
+### Activate account (password method)
+
+```bash
+curl -X POST /portal/activate/password \
+  -H "Content-Type: application/json" \
+  -d '{"token":"activation_token_from_email","password":"newpassword"}'
+```
+
+### Send activation email (admin)
+
+```bash
+curl -X POST /portal/send-activation \
+  -H "X-API-Key: SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"peer_id":1,"method":"password"}'
+```
+
+## Integrations
+
+### List providers
+
+```bash
+curl /integrations/providers -H "X-API-Key: SESSION_TOKEN"
+```
+
+### Create integration
+
+```bash
+curl -X POST /integrations \
+  -H "X-API-Key: SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "google_workspace",
+    "name": "Acme Corp Google",
+    "config": {"client_id":"xxx","client_secret":"xxx","domain":"acme.com"}
+  }'
+```
+
+### OAuth flow
+
+```bash
+# Get auth URL
+curl /integrations/1/auth-url -H "X-API-Key: SESSION_TOKEN"
+
+# Exchange code
+curl -X POST /integrations/1/callback \
+  -H "X-API-Key: SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"google_auth_code"}'
+```
+
+### Sync and import users
+
+```bash
+# List users from provider
+curl /integrations/1/users -H "X-API-Key: SESSION_TOKEN"
+
+# Import selected users
+curl -X POST /integrations/1/import \
+  -H "X-API-Key: SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "interface_id": 1,
+    "group_id": 2,
+    "users": [
+      {"email":"john@acme.com","firstname":"John","lastname":"Doe"},
+      {"email":"jane@acme.com","firstname":"Jane","lastname":"Smith"}
+    ]
+  }'
 ```
 
 ## Request Logs

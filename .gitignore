@@ -6,6 +6,9 @@ __pycache__/
 *.swo
 .DS_Store
 
+node_modules/
+package-lock.json
+
 # Production configs — never commit these
 ansible/inventory.yml
 ansible/host_vars/

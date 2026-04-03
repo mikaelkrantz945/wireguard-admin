@@ -20,7 +20,7 @@
 
 - name: Set timezone
   timezone:
-    name: UTC
+    name: Europe/Stockholm
 
 - name: Configure UFW - allow SSH
   ufw:

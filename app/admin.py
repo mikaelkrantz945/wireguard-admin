@@ -121,6 +121,8 @@ class InviteRequest(BaseModel):
     lastname: str
     email: str
     role: str = "readonly"
+    group_id: int = 0
+    activation_method: str = "password"  # "password" or "google"
 
 
 class UpdateUserRequest(BaseModel):
@@ -135,8 +137,41 @@ async def list_all_users():
 
 @router.post("/users/invite", status_code=201, dependencies=[Depends(_require_admin)])
 async def invite_user(req: InviteRequest):
-    if req.role not in ("readonly", "admin"):
-        raise HTTPException(400, "Role must be 'readonly' or 'admin'")
+    if req.role not in ("readonly", "admin", "vpn"):
+        raise HTTPException(400, "Role must be 'readonly', 'admin', or 'vpn'")
+
+    if req.role == "vpn":
+        # Create a WireGuard peer instead of an admin user
+        from . import db
+        from .wireguard import peers
+        from .portal import send_activation_email
+
+        iface = db.fetchone("SELECT id FROM wg_interfaces ORDER BY id LIMIT 1")
+        if not iface:
+            raise HTTPException(400, "No WireGuard interface configured. Create one first.")
+
+        name = f"{req.firstname} {req.lastname}".strip()
+        try:
+            result = peers.create_peer(
+                interface_id=iface["id"],
+                name=name,
+                note=req.email,
+                group_id=req.group_id,
+            )
+            peer_id = result["peer"]["id"]
+            send_activation_email(peer_id, req.email, name, req.activation_method)
+            return {
+                "id": peer_id,
+                "email": req.email,
+                "firstname": req.firstname,
+                "lastname": req.lastname,
+                "role": "vpn",
+                "invite_sent": True,
+                "activation_method": req.activation_method,
+            }
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
     try:
         return users.invite_user(req.firstname, req.lastname, req.email, req.role)
     except ValueError as e:

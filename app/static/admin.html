@@ -206,7 +206,7 @@ tr:hover{background:#1c1f26}
     <!-- Users -->
     <div class="tab" id="tab-users">
       <div class="toolbar">
-        <button class="btn btn-primary" onclick="showModal('inviteModal')">+ Invite User</button>
+        <button class="btn btn-primary" onclick="showInviteModal()">+ Invite User</button>
       </div>
       <table><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th><th>Accepted</th><th></th></tr></thead><tbody id="usersTable"></tbody></table>
     </div>
@@ -332,7 +332,11 @@ tr:hover{background:#1c1f26}
     <label>First name<input type="text" id="invFirstname"></label>
     <label>Last name<input type="text" id="invLastname"></label>
     <label>Email<input type="email" id="invEmail"></label>
-    <label>Role<select id="invRole"><option value="readonly">Read-only</option><option value="admin">Admin</option></select></label>
+    <label>Role<select id="invRole" onchange="onInvRoleChange()"><option value="vpn">VPN User</option><option value="readonly">Admin (Read-only)</option><option value="admin">Admin (Full)</option></select></label>
+    <div id="invVpnOptions">
+      <label>Group<select id="invGroup"></select></label>
+      <label>Activation<select id="invActivation"><option value="password">Email + Password</option><option value="google">Google OAuth</option></select></label>
+    </div>
     <div id="inviteResult"></div>
     <div class="actions">
       <button class="btn btn-secondary" onclick="closeModal('inviteModal')">Close</button>
@@ -722,10 +726,30 @@ async function loadUsers(){
   const u=await api('/admin/users').then(r=>r.json()).catch(()=>[]);
   document.getElementById('usersTable').innerHTML=u.length?u.map(x=>`<tr><td>${x.id}</td><td>${x.firstname} ${x.lastname}</td><td>${x.email}</td><td>${badge(x.role,x.role)}</td><td>${x.active?badge('active','active'):badge('pending','pending')}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.accepted)}</td><td>${USER.role==='admin'?`<button class="btn btn-danger btn-sm" onclick="deleteUser(${x.id})">Delete</button>`:''}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">No users</td></tr>';
 }
+async function showInviteModal(){
+  document.getElementById('invFirstname').value='';document.getElementById('invLastname').value='';
+  document.getElementById('invEmail').value='';document.getElementById('invRole').value='vpn';
+  document.getElementById('inviteResult').innerHTML='';
+  await populateGroupDropdown('invGroup',0);
+  onInvRoleChange();
+  showModal('inviteModal');
+}
+function onInvRoleChange(){
+  document.getElementById('invVpnOptions').style.display=document.getElementById('invRole').value==='vpn'?'':'none';
+}
 async function sendInvite(){
-  const d={firstname:document.getElementById('invFirstname').value,lastname:document.getElementById('invLastname').value,email:document.getElementById('invEmail').value,role:document.getElementById('invRole').value};
+  const role=document.getElementById('invRole').value;
+  const d={firstname:document.getElementById('invFirstname').value,lastname:document.getElementById('invLastname').value,email:document.getElementById('invEmail').value,role:role};
+  if(role==='vpn'){
+    d.group_id=parseInt(document.getElementById('invGroup').value)||0;
+    d.activation_method=document.getElementById('invActivation').value;
+  }
   if(!d.email)return;const r=await api('/admin/users/invite',{method:'POST',body:JSON.stringify(d)});
-  if(r.ok){document.getElementById('inviteResult').innerHTML='<p class="ok">Invite sent!</p>';loadUsers()}
+  if(r.ok){
+    const msg=role==='vpn'?'VPN user created — activation email sent!':'Invite sent!';
+    document.getElementById('inviteResult').innerHTML=`<p class="ok">${msg}</p>`;
+    if(role==='vpn')loadPeers();else loadUsers();
+  }
   else{const e=await r.json();document.getElementById('inviteResult').innerHTML=`<p class="err">${e.detail||'Failed'}</p>`}
 }
 async function deleteUser(id){if(confirm('Delete user?')){await api(`/admin/users/${id}`,{method:'DELETE'});loadUsers()}}

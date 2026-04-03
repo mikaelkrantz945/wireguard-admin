@@ -27,3 +27,10 @@
     path: /etc/wireguard
     state: directory
     mode: "0700"
+
+- name: Enable wg0 auto-start on boot
+  systemd:
+    name: wg-quick@wg0
+    enabled: true
+  when: ansible_facts.services is not defined or true
+  ignore_errors: true

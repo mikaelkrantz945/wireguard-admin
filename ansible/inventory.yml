@@ -4,6 +4,7 @@ all:
       ansible_host: vpndev.no-ack.net
       ansible_user: mikael
       ansible_become: true
+      ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p mikael@185.231.102.2"'
   vars:
     project_dir: /home/mikael/wireguard-admin
     repo_url: git@github.com:mikaelkrantz945/wireguard-admin.git

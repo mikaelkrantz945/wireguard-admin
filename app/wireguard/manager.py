@@ -50,9 +50,10 @@ def write_server_config(interface: dict, peers: list[dict]):
     os.chmod(config_path, 0o600)
 
 
-def generate_client_config(interface: dict, peer: dict) -> str:
+def generate_client_config(interface: dict, peer: dict, acl_allowed_ips: str = "") -> str:
     """Generate a client config string for download."""
     dns = peer.get("dns") or interface.get("dns") or settings.wg_default_dns
+    client_allowed_ips = acl_allowed_ips or "0.0.0.0/0, ::/0"
     lines = ["[Interface]"]
     lines.append(f"PrivateKey = {peer['private_key']}")
     lines.append(f"Address = {peer['allowed_ips']}")
@@ -64,7 +65,7 @@ def generate_client_config(interface: dict, peer: dict) -> str:
     if peer.get("preshared_key"):
         lines.append(f"PresharedKey = {peer['preshared_key']}")
     lines.append(f"Endpoint = {interface['endpoint']}")
-    lines.append("AllowedIPs = 0.0.0.0/0, ::/0")
+    lines.append(f"AllowedIPs = {client_allowed_ips}")
     if peer.get("persistent_keepalive"):
         lines.append(f"PersistentKeepalive = {peer['persistent_keepalive']}")
     return "\n".join(lines) + "\n"

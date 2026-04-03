@@ -157,6 +157,17 @@ def init_schema():
                 )
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS wg_acl_profiles (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT UNIQUE NOT NULL,
+                    description TEXT DEFAULT '',
+                    allowed_ips TEXT NOT NULL DEFAULT '0.0.0.0/0, ::/0',
+                    fw_rules TEXT DEFAULT '',
+                    is_default BOOLEAN DEFAULT FALSE,
+                    created TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS wg_ip_allocations (
                     id SERIAL PRIMARY KEY,
                     interface_id INTEGER NOT NULL REFERENCES wg_interfaces(id) ON DELETE CASCADE,
@@ -165,6 +176,13 @@ def init_schema():
                     allocated BOOLEAN NOT NULL DEFAULT TRUE,
                     allocated_at TEXT NOT NULL
                 )
+            """)
+            # Add acl_profile_id to wg_peers if missing (migration)
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE wg_peers ADD COLUMN acl_profile_id INTEGER DEFAULT 0;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_request_log_ts ON request_log(ts DESC)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)")

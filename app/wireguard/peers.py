@@ -3,12 +3,13 @@
 from datetime import datetime
 
 from .. import db
-from . import manager, ipam
+from . import manager, ipam, acl
 
 
 def create_peer(interface_id: int, name: str, note: str = "",
                 dns: str = "", persistent_keepalive: int = 25,
-                hostbill_service_id: int = 0, hostbill_client_id: int = 0) -> dict:
+                hostbill_service_id: int = 0, hostbill_client_id: int = 0,
+                acl_profile_id: int = 0) -> dict:
     """Create a new peer: allocate IP, generate keys, write config."""
     iface = db.fetchone("SELECT * FROM wg_interfaces WHERE id = %s", (interface_id,))
     if not iface:
@@ -27,11 +28,11 @@ def create_peer(interface_id: int, name: str, note: str = "",
         """INSERT INTO wg_peers
            (interface_id, name, private_key, public_key, preshared_key,
             allowed_ips, dns, persistent_keepalive, enabled,
-            hostbill_service_id, hostbill_client_id, note, created)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s,%s,%s,%s) RETURNING id""",
+            hostbill_service_id, hostbill_client_id, note, created, acl_profile_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s,%s,%s,%s,%s) RETURNING id""",
         (interface_id, name, private_key, public_key, preshared_key,
          allowed_ips, dns, persistent_keepalive,
-         hostbill_service_id, hostbill_client_id, note, now),
+         hostbill_service_id, hostbill_client_id, note, now, acl_profile_id),
         fetchone=True, commit=True,
     )
     peer_id = row["id"]
@@ -41,7 +42,9 @@ def create_peer(interface_id: int, name: str, note: str = "",
     _sync_config(interface_id)
 
     peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (peer_id,))
-    client_config = manager.generate_client_config(dict(iface), dict(peer))
+    profile = acl.get_profile_for_peer(peer_id)
+    acl_ips = profile["allowed_ips"] if profile else ""
+    client_config = manager.generate_client_config(dict(iface), dict(peer), acl_allowed_ips=acl_ips)
     qr_code = manager.generate_qr(client_config)
 
     return {
@@ -85,7 +88,7 @@ def disable_peer(peer_id: int):
 
 
 def update_peer(peer_id: int, name: str = None, note: str = None, dns: str = None,
-                persistent_keepalive: int = None) -> dict:
+                persistent_keepalive: int = None, acl_profile_id: int = None) -> dict:
     """Update peer metadata."""
     updates, params = [], []
     if name is not None:
@@ -100,11 +103,17 @@ def update_peer(peer_id: int, name: str = None, note: str = None, dns: str = Non
     if persistent_keepalive is not None:
         updates.append("persistent_keepalive = %s")
         params.append(persistent_keepalive)
+    if acl_profile_id is not None:
+        updates.append("acl_profile_id = %s")
+        params.append(acl_profile_id)
     if not updates:
         raise ValueError("No fields to update")
     params.append(peer_id)
     db.execute(f"UPDATE wg_peers SET {', '.join(updates)} WHERE id = %s", tuple(params))
-    return dict(db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (peer_id,)))
+    peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (peer_id,))
+    if acl_profile_id is not None:
+        _apply_acl(peer["interface_id"])
+    return dict(peer)
 
 
 def get_peer(peer_id: int) -> dict | None:
@@ -125,7 +134,9 @@ def get_peer_config(peer_id: int) -> str:
     if not peer:
         raise ValueError("Peer not found")
     iface = db.fetchone("SELECT * FROM wg_interfaces WHERE id = %s", (peer["interface_id"],))
-    return manager.generate_client_config(dict(iface), dict(peer))
+    profile = acl.get_profile_for_peer(peer_id)
+    acl_ips = profile["allowed_ips"] if profile else ""
+    return manager.generate_client_config(dict(iface), dict(peer), acl_allowed_ips=acl_ips)
 
 
 def get_peer_qr(peer_id: int) -> str:
@@ -139,10 +150,22 @@ def _sync_config(interface_id: int):
     iface = db.fetchone("SELECT * FROM wg_interfaces WHERE id = %s", (interface_id,))
     if not iface:
         return
-    peers = db.fetchall("SELECT * FROM wg_peers WHERE interface_id = %s", (interface_id,))
-    manager.write_server_config(dict(iface), [dict(p) for p in peers])
+    peer_list = db.fetchall("SELECT * FROM wg_peers WHERE interface_id = %s", (interface_id,))
+    manager.write_server_config(dict(iface), [dict(p) for p in peer_list])
     if manager.is_interface_up(iface["name"]):
         try:
             manager.apply_config(iface["name"])
         except RuntimeError:
-            pass  # Config written but live reload failed — will apply on next restart
+            pass
+    _apply_acl(interface_id)
+
+
+def _apply_acl(interface_id: int):
+    """Apply iptables ACL rules for the interface."""
+    iface = db.fetchone("SELECT * FROM wg_interfaces WHERE id = %s", (interface_id,))
+    if not iface:
+        return
+    try:
+        acl.apply_firewall_rules(iface["name"])
+    except Exception:
+        pass

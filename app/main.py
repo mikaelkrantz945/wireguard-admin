@@ -24,6 +24,8 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup():
     db.init_schema()
+    from .wireguard.acl import seed_default
+    seed_default()
 
 
 app.add_middleware(RequestLogMiddleware)

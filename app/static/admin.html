@@ -125,6 +125,7 @@ tr:hover{background:#1c1f26}
     <button class="active" onclick="showTab('dashboard',this)">Dashboard</button>
     <button onclick="showTab('peers',this)">Peers</button>
     <button onclick="showTab('interfaces',this)">Interfaces</button>
+    <button onclick="showTab('acl',this)">ACL Profiles</button>
     <button onclick="showTab('keys',this)">API Keys</button>
     <button onclick="showTab('logs',this)">Request Logs</button>
     <button onclick="showTab('users',this)" id="navUsers" style="display:none">Users</button>
@@ -145,7 +146,7 @@ tr:hover{background:#1c1f26}
         <input type="text" id="peerFilter" placeholder="Filter peers..." oninput="filterPeers()">
         <button class="btn btn-primary" onclick="showCreatePeer()">+ New Peer</button>
       </div>
-      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
+      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>ACL</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
     </div>
 
     <!-- Interfaces -->
@@ -154,6 +155,14 @@ tr:hover{background:#1c1f26}
         <button class="btn btn-primary" onclick="showModal('createIfaceModal')">+ New Interface</button>
       </div>
       <table><thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Subnet</th><th>Port</th><th>Endpoint</th><th>Peers</th><th>Status</th><th></th></tr></thead><tbody id="ifacesTable"></tbody></table>
+    </div>
+
+    <!-- ACL Profiles -->
+    <div class="tab" id="tab-acl">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showModal('createAclModal')">+ New Profile</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>Name</th><th>Description</th><th>Client AllowedIPs</th><th>Firewall Rules</th><th>Peers</th><th>Default</th><th></th></tr></thead><tbody id="aclTable"></tbody></table>
     </div>
 
     <!-- API Keys -->
@@ -199,6 +208,7 @@ tr:hover{background:#1c1f26}
     <input type="hidden" id="newPeerIface">
     <label>Name<input type="text" id="newPeerName" placeholder="e.g. johns-laptop"></label>
     <label>Note<input type="text" id="newPeerNote" placeholder="Optional"></label>
+    <label>ACL Profile<select id="newPeerAcl"></select></label>
     <label>DNS (override)<input type="text" id="newPeerDns" placeholder="Leave empty for default"></label>
     <label>Keepalive<input type="number" id="newPeerKeepalive" value="25"></label>
     <p class="err" id="newPeerErr"></p>
@@ -233,6 +243,7 @@ tr:hover{background:#1c1f26}
     <input type="hidden" id="editPeerId">
     <label>Name<input type="text" id="editPeerName"></label>
     <label>Note<input type="text" id="editPeerNote"></label>
+    <label>ACL Profile<select id="editPeerAcl"></select></label>
     <label>DNS<input type="text" id="editPeerDns"></label>
     <label>Keepalive<input type="number" id="editPeerKeepalive"></label>
     <p class="err" id="editPeerErr"></p>
@@ -313,6 +324,42 @@ tr:hover{background:#1c1f26}
   </div>
 </div>
 
+<!-- Create ACL Profile Modal -->
+<div class="modal-bg" id="createAclModal">
+  <div class="modal">
+    <h2>Create ACL Profile</h2>
+    <label>Name<input type="text" id="newAclName" placeholder="e.g. Web Only"></label>
+    <label>Description<input type="text" id="newAclDesc" placeholder="Optional"></label>
+    <label>Client AllowedIPs<input type="text" id="newAclAllowedIps" value="0.0.0.0/0, ::/0" placeholder="0.0.0.0/0, ::/0"></label>
+    <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">What the client routes through the tunnel. Use 0.0.0.0/0 for full tunnel.</p>
+    <label>Firewall Rules<input type="text" id="newAclFwRules" placeholder="10.0.0.0/8, 192.168.1.0/24 (empty = allow all)"></label>
+    <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">Server-side enforcement. Comma-separated subnets/hosts the peer can reach. Empty = no restriction.</p>
+    <p class="err" id="newAclErr"></p>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('createAclModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doCreateAcl()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit ACL Profile Modal -->
+<div class="modal-bg" id="editAclModal">
+  <div class="modal">
+    <h2>Edit ACL Profile</h2>
+    <input type="hidden" id="editAclId">
+    <label>Name<input type="text" id="editAclName"></label>
+    <label>Description<input type="text" id="editAclDesc"></label>
+    <label>Client AllowedIPs<input type="text" id="editAclAllowedIps"></label>
+    <label>Firewall Rules<input type="text" id="editAclFwRules"></label>
+    <p class="err" id="editAclErr"></p>
+    <div class="actions">
+      <button class="btn btn-danger" onclick="doDeleteAcl()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-secondary" onclick="closeModal('editAclModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doEditAcl()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let TOKEN=sessionStorage.getItem('tk')||'';
 let USER=JSON.parse(sessionStorage.getItem('usr')||'null');
@@ -333,7 +380,7 @@ function badge(t,c){return`<span class="badge badge-${c||t}">${t}</span>`}
 function ts(s){return s?s.replace('T',' ').slice(0,19):'-'}
 function fmtBytes(b){if(!b||b===0)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 function fmtHandshake(epoch){if(!epoch)return'-';const d=Math.floor(Date.now()/1000)-epoch;if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago'}
-function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,keys:loadKeys,logs:loadLogs,users:loadUsers,security:loadSecurity})[n]?.()}
+function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,acl:loadAclProfiles,keys:loadKeys,logs:loadLogs,users:loadUsers,security:loadSecurity})[n]?.()}
 function showModal(id){document.getElementById(id).classList.add('show')}
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 
@@ -415,6 +462,7 @@ function filterPeers(){
   const adm=USER&&USER.role==='admin';
   document.getElementById('peersTable').innerHTML=f.length?f.map(p=>`<tr>
     <td>${p.id}</td><td>${p.name}</td><td class="mono">${p.allowed_ips}</td>
+    <td>${badge(p.acl_profile_name||'Default','all')}</td>
     <td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td>
     <td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td>
     <td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td>
@@ -422,9 +470,9 @@ function filterPeers(){
       <button class="btn btn-sm btn-secondary" onclick="showPeerConfig(${p.id},'${p.name}')">Config</button>
       ${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditPeer(${p.id})">Edit</button>
       <button class="btn btn-sm ${p.enabled?'btn-danger':'btn-primary'}" onclick="${p.enabled?'togglePeer('+p.id+',false)':'togglePeer('+p.id+',true)'}">${p.enabled?'Disable':'Enable'}</button>`:''}
-    </td></tr>`).join(''):'<tr><td colspan="8" class="empty">No peers</td></tr>';
+    </td></tr>`).join(''):'<tr><td colspan="9" class="empty">No peers</td></tr>';
 }
-function showCreatePeer(){
+async function showCreatePeer(){
   const ifaceId=document.getElementById('peerIfaceFilter').value;
   if(!ifaceId){alert('Create an interface first');return}
   document.getElementById('newPeerIface').value=ifaceId;
@@ -432,11 +480,12 @@ function showCreatePeer(){
   document.getElementById('newPeerDns').value='';document.getElementById('newPeerKeepalive').value='25';
   document.getElementById('newPeerErr').textContent='';document.getElementById('newPeerResult').innerHTML='';
   document.getElementById('createPeerBtn').style.display='';
+  await populateAclDropdown('newPeerAcl',0);
   showModal('createPeerModal');
 }
 async function doCreatePeer(){
   const ifaceId=document.getElementById('newPeerIface').value;
-  const d={name:document.getElementById('newPeerName').value,note:document.getElementById('newPeerNote').value,dns:document.getElementById('newPeerDns').value,persistent_keepalive:parseInt(document.getElementById('newPeerKeepalive').value)||25};
+  const d={name:document.getElementById('newPeerName').value,note:document.getElementById('newPeerNote').value,dns:document.getElementById('newPeerDns').value,persistent_keepalive:parseInt(document.getElementById('newPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('newPeerAcl').value)||0};
   if(!d.name){document.getElementById('newPeerErr').textContent='Name is required';return}
   const r=await api(`/wg/interfaces/${ifaceId}/peers`,{method:'POST',body:JSON.stringify(d)});
   if(r.ok){
@@ -465,11 +514,12 @@ async function showEditPeer(id){
   document.getElementById('editPeerId').value=id;
   document.getElementById('editPeerName').value=p.name;document.getElementById('editPeerNote').value=p.note||'';
   document.getElementById('editPeerDns').value=p.dns||'';document.getElementById('editPeerKeepalive').value=p.persistent_keepalive||25;
+  await populateAclDropdown('editPeerAcl',p.acl_profile_id||0);
   document.getElementById('editPeerErr').textContent='';showModal('editPeerModal');
 }
 async function doEditPeer(){
   const id=document.getElementById('editPeerId').value;
-  const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25};
+  const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('editPeerAcl').value)||0};
   const r=await api(`/wg/peers/${id}`,{method:'PUT',body:JSON.stringify(d)});
   if(r.ok){closeModal('editPeerModal');loadPeers()}else{const e=await r.json();document.getElementById('editPeerErr').textContent=e.detail||'Failed'}
 }
@@ -562,6 +612,53 @@ async function verifyTotp(){
 async function disableTotp(){
   if(!confirm('Disable 2FA?'))return;
   await api('/admin/auth/totp/disable',{method:'POST'});loadSecurity();
+}
+
+// ── ACL Profiles ──
+async function populateAclDropdown(selectId,selectedId){
+  const profiles=await api('/wg/acl-profiles').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const sel=document.getElementById(selectId);
+  sel.innerHTML='<option value="0">Default (Full Access)</option>'+profiles.map(p=>`<option value="${p.id}"${p.id===selectedId?' selected':''}>${p.name}</option>`).join('');
+}
+async function loadAclProfiles(){
+  const profiles=await api('/wg/acl-profiles').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const adm=USER&&USER.role==='admin';
+  document.getElementById('aclTable').innerHTML=profiles.length?profiles.map(p=>`<tr>
+    <td>${p.id}</td><td>${p.name}</td><td>${p.description||'-'}</td>
+    <td class="mono" style="font-size:.78rem">${p.allowed_ips}</td>
+    <td class="mono" style="font-size:.78rem">${p.fw_rules||'<span style="color:#8b949e">any</span>'}</td>
+    <td>${p.peer_count||0}</td>
+    <td>${p.is_default?badge('default','active'):'-'}</td>
+    <td>${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditAcl(${p.id})">Edit</button>`:''}</td>
+  </tr>`).join(''):'<tr><td colspan="8" class="empty">No profiles</td></tr>';
+}
+async function doCreateAcl(){
+  const d={name:document.getElementById('newAclName').value,description:document.getElementById('newAclDesc').value,allowed_ips:document.getElementById('newAclAllowedIps').value,fw_rules:document.getElementById('newAclFwRules').value};
+  if(!d.name){document.getElementById('newAclErr').textContent='Name is required';return}
+  const r=await api('/wg/acl-profiles',{method:'POST',body:JSON.stringify(d)});
+  if(r.ok){closeModal('createAclModal');loadAclProfiles()}else{const e=await r.json();document.getElementById('newAclErr').textContent=e.detail||'Failed'}
+}
+async function showEditAcl(id){
+  const p=await api(`/wg/acl-profiles`).then(r=>r.json()).then(ps=>ps.find(x=>x.id===id));
+  if(!p)return;
+  document.getElementById('editAclId').value=id;
+  document.getElementById('editAclName').value=p.name;
+  document.getElementById('editAclDesc').value=p.description||'';
+  document.getElementById('editAclAllowedIps').value=p.allowed_ips;
+  document.getElementById('editAclFwRules').value=p.fw_rules||'';
+  document.getElementById('editAclErr').textContent='';showModal('editAclModal');
+}
+async function doEditAcl(){
+  const id=document.getElementById('editAclId').value;
+  const d={name:document.getElementById('editAclName').value,description:document.getElementById('editAclDesc').value,allowed_ips:document.getElementById('editAclAllowedIps').value,fw_rules:document.getElementById('editAclFwRules').value};
+  const r=await api(`/wg/acl-profiles/${id}`,{method:'PUT',body:JSON.stringify(d)});
+  if(r.ok){closeModal('editAclModal');loadAclProfiles()}else{const e=await r.json();document.getElementById('editAclErr').textContent=e.detail||'Failed'}
+}
+async function doDeleteAcl(){
+  const id=document.getElementById('editAclId').value;
+  if(!confirm('Delete this ACL profile?'))return;
+  const r=await api(`/wg/acl-profiles/${id}`,{method:'DELETE'});
+  if(r.ok){closeModal('editAclModal');loadAclProfiles()}else{const e=await r.json();alert(e.detail||'Cannot delete')}
 }
 
 // ── Init ──

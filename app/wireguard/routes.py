@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from ..auth import verify_wireguard
 from .. import db
-from . import manager, ipam, peers, status
+from . import manager, ipam, peers, status, acl
 
 router = APIRouter(prefix="/wg", tags=["WireGuard"])
 
@@ -36,6 +36,7 @@ class CreatePeerRequest(BaseModel):
     note: str = ""
     dns: str = ""
     persistent_keepalive: int = 25
+    acl_profile_id: int = 0
 
 
 class UpdatePeerRequest(BaseModel):
@@ -43,6 +44,23 @@ class UpdatePeerRequest(BaseModel):
     note: str | None = None
     dns: str | None = None
     persistent_keepalive: int | None = None
+    acl_profile_id: int | None = None
+
+
+class CreateAclProfileRequest(BaseModel):
+    name: str
+    description: str = ""
+    allowed_ips: str = "0.0.0.0/0, ::/0"
+    fw_rules: str = ""
+    is_default: bool = False
+
+
+class UpdateAclProfileRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    allowed_ips: str | None = None
+    fw_rules: str | None = None
+    is_default: bool | None = None
 
 
 # -- Interface endpoints --
@@ -187,6 +205,9 @@ async def list_interface_peers(iface_id: int):
     live = status.get_live_status(iface["name"])
     live_map = {p["public_key"]: p for p in live.get("peers", [])}
 
+    # Build ACL profile name lookup
+    profiles = {p["id"]: p["name"] for p in acl.list_profiles()}
+
     result = []
     for p in peer_list:
         d = dict(p)
@@ -195,6 +216,7 @@ async def list_interface_peers(iface_id: int):
         d["latest_handshake"] = live_peer.get("latest_handshake", 0)
         d["transfer_rx"] = live_peer.get("transfer_rx", 0)
         d["transfer_tx"] = live_peer.get("transfer_tx", 0)
+        d["acl_profile_name"] = profiles.get(p.get("acl_profile_id", 0), "Default")
         result.append(d)
     return result
 
@@ -208,6 +230,7 @@ async def create_peer(iface_id: int, req: CreatePeerRequest):
             note=req.note,
             dns=req.dns,
             persistent_keepalive=req.persistent_keepalive,
+            acl_profile_id=req.acl_profile_id,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -224,7 +247,7 @@ async def get_peer(peer_id: int):
 @router.put("/peers/{peer_id}", dependencies=[Depends(verify_wireguard)])
 async def update_peer(peer_id: int, req: UpdatePeerRequest):
     try:
-        return peers.update_peer(peer_id, req.name, req.note, req.dns, req.persistent_keepalive)
+        return peers.update_peer(peer_id, req.name, req.note, req.dns, req.persistent_keepalive, req.acl_profile_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -285,3 +308,43 @@ async def get_status():
 @router.get("/status/{interface_name}", dependencies=[Depends(verify_wireguard)])
 async def get_interface_status(interface_name: str):
     return status.get_live_status(interface_name)
+
+
+# -- ACL Profiles --
+
+@router.get("/acl-profiles", dependencies=[Depends(verify_wireguard)])
+async def list_acl_profiles():
+    return acl.list_profiles()
+
+
+@router.post("/acl-profiles", status_code=201, dependencies=[Depends(verify_wireguard)])
+async def create_acl_profile(req: CreateAclProfileRequest):
+    try:
+        return acl.create_profile(req.name, req.description, req.allowed_ips, req.fw_rules, req.is_default)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/acl-profiles/{profile_id}", dependencies=[Depends(verify_wireguard)])
+async def update_acl_profile(profile_id: int, req: UpdateAclProfileRequest):
+    try:
+        profile = acl.update_profile(profile_id, req.name, req.description, req.allowed_ips, req.fw_rules, req.is_default)
+        # Re-apply firewall rules for all interfaces
+        ifaces = db.fetchall("SELECT name FROM wg_interfaces")
+        for iface in ifaces:
+            try:
+                acl.apply_firewall_rules(iface["name"])
+            except Exception:
+                pass
+        return profile
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/acl-profiles/{profile_id}", dependencies=[Depends(verify_wireguard)])
+async def delete_acl_profile(profile_id: int):
+    try:
+        acl.delete_profile(profile_id)
+        return {"deleted": profile_id}
+    except ValueError as e:
+        raise HTTPException(400, str(e))

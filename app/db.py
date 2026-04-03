@@ -186,6 +186,18 @@ def init_schema():
                     created TEXT NOT NULL
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS integrations (
+                    id SERIAL PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    config TEXT DEFAULT '{}',
+                    tokens TEXT DEFAULT '{}',
+                    status TEXT DEFAULT 'pending',
+                    last_sync TEXT DEFAULT '',
+                    created TEXT NOT NULL
+                )
+            """)
             # Migrations for existing installs
             cur.execute("""
                 DO $$ BEGIN

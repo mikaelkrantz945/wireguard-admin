@@ -99,10 +99,70 @@ def get_profile_for_peer(peer_id: int) -> dict | None:
     return profile or get_default_profile()
 
 
+# -- Rule parsing --
+
+def parse_fw_rules(fw_rules: str) -> list[dict]:
+    """Parse fw_rules string into structured rules.
+
+    Format: destination[:ports[/protocol]]
+    Separated by semicolons, commas (without ports), or newlines.
+
+    Examples:
+        "10.0.0.0/8"                       -> all traffic to 10.0.0.0/8
+        "0.0.0.0/0:80,443"                 -> tcp 80,443 to anywhere
+        "0.0.0.0/0:80,443/tcp"             -> tcp 80,443 to anywhere
+        "8.8.8.8/32:53/udp"                -> udp 53 to 8.8.8.8
+        "0.0.0.0/0:80,443; 10.0.0.0/8"    -> combined
+    """
+    rules = []
+    # Split on semicolons and newlines first
+    entries = []
+    for part in fw_rules.replace("\n", ";").split(";"):
+        part = part.strip()
+        if part:
+            entries.append(part)
+
+    # If no semicolons were used, try comma-split but only for entries without ports
+    if not entries:
+        return rules
+    if len(entries) == 1 and ":" not in entries[0] and "," in entries[0]:
+        # Legacy format: comma-separated destinations without ports
+        entries = [e.strip() for e in entries[0].split(",") if e.strip()]
+
+    for entry in entries:
+        if ":" in entry:
+            dest, port_spec = entry.split(":", 1)
+            dest = dest.strip()
+            if "/" in port_spec and not port_spec.split("/")[0].replace(",", "").replace(" ", "").isdigit() is False:
+                # Check if the / is protocol separator (e.g., "80,443/tcp") vs subnet mask
+                parts = port_spec.rsplit("/", 1)
+                if parts[-1] in ("tcp", "udp", "both"):
+                    ports = parts[0].strip()
+                    proto = parts[-1]
+                else:
+                    ports = port_spec.strip()
+                    proto = "tcp"
+            else:
+                ports = port_spec.strip()
+                proto = "tcp"
+            rules.append({"dest": dest, "ports": ports, "proto": proto})
+        else:
+            rules.append({"dest": entry.strip(), "ports": "", "proto": ""})
+
+    return rules
+
+
 # -- iptables enforcement --
 
 def apply_firewall_rules(interface_name: str = "wg0"):
-    """Rebuild the WG_ACL iptables chain based on all peers and their ACL profiles."""
+    """Rebuild the WG_ACL iptables chain based on all peers and their ACL profiles.
+
+    fw_rules format: destination[:ports[/protocol]] separated by semicolons.
+    Examples:
+        0.0.0.0/0:80,443       -> tcp ports 80,443 to any destination
+        10.0.0.0/8              -> all traffic to 10.0.0.0/8
+        8.8.8.8/32:53/udp      -> udp port 53 to 8.8.8.8
+    """
     # Ensure chain exists
     subprocess.run(["iptables", "-N", "WG_ACL"], capture_output=True)
 
@@ -133,13 +193,16 @@ def apply_firewall_rules(interface_name: str = "wg0"):
             # No restrictions — traffic passes through to normal FORWARD rules
             continue
 
-        # Add ACCEPT rules for each allowed destination
-        destinations = [d.strip() for d in profile["fw_rules"].split(",") if d.strip()]
-        for dest in destinations:
-            subprocess.run(
-                ["iptables", "-A", "WG_ACL", "-s", peer_ip, "-d", dest, "-j", "ACCEPT"],
-                capture_output=True
-            )
+        rules = parse_fw_rules(profile["fw_rules"])
+        for rule in rules:
+            cmd = ["iptables", "-A", "WG_ACL", "-s", peer_ip, "-d", rule["dest"]]
+            if rule["ports"]:
+                protos = ["tcp", "udp"] if rule["proto"] == "both" else [rule["proto"] or "tcp"]
+                for proto in protos:
+                    pcmd = cmd + ["-p", proto, "-m", "multiport", "--dports", rule["ports"], "-j", "ACCEPT"]
+                    subprocess.run(pcmd, capture_output=True)
+            else:
+                subprocess.run(cmd + ["-j", "ACCEPT"], capture_output=True)
 
         # Default deny for this peer
         subprocess.run(

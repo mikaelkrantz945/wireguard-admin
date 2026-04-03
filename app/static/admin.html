@@ -332,8 +332,8 @@ tr:hover{background:#1c1f26}
     <label>Description<input type="text" id="newAclDesc" placeholder="Optional"></label>
     <label>Client AllowedIPs<input type="text" id="newAclAllowedIps" value="0.0.0.0/0, ::/0" placeholder="0.0.0.0/0, ::/0"></label>
     <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">What the client routes through the tunnel. Use 0.0.0.0/0 for full tunnel.</p>
-    <label>Firewall Rules<input type="text" id="newAclFwRules" placeholder="10.0.0.0/8, 192.168.1.0/24 (empty = allow all)"></label>
-    <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">Server-side enforcement. Comma-separated subnets/hosts the peer can reach. Empty = no restriction.</p>
+    <label>Firewall Rules<textarea id="newAclFwRules" rows="3" placeholder="0.0.0.0/0:80,443&#10;10.0.0.0/8&#10;8.8.8.8/32:53/udp" style="font-family:monospace;font-size:.82rem"></textarea></label>
+    <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">Server-side iptables enforcement. One rule per line: <code>destination[:ports[/proto]]</code><br>Empty = no restriction. Proto: tcp (default), udp, both.</p>
     <p class="err" id="newAclErr"></p>
     <div class="actions">
       <button class="btn btn-secondary" onclick="closeModal('createAclModal')">Cancel</button>
@@ -350,7 +350,7 @@ tr:hover{background:#1c1f26}
     <label>Name<input type="text" id="editAclName"></label>
     <label>Description<input type="text" id="editAclDesc"></label>
     <label>Client AllowedIPs<input type="text" id="editAclAllowedIps"></label>
-    <label>Firewall Rules<input type="text" id="editAclFwRules"></label>
+    <label>Firewall Rules<textarea id="editAclFwRules" rows="3" style="font-family:monospace;font-size:.82rem"></textarea></label>
     <p class="err" id="editAclErr"></p>
     <div class="actions">
       <button class="btn btn-danger" onclick="doDeleteAcl()" style="margin-right:auto">Delete</button>

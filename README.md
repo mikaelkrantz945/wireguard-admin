@@ -108,11 +108,26 @@ ACL profiles control what each VPN peer can access, with two layers of enforceme
 1. **Client AllowedIPs** — Controls what traffic the client routes through the tunnel
 2. **Firewall rules** — Server-side iptables enforcement via a custom `WG_ACL` chain
 
-| Profile example | Client AllowedIPs | Firewall rules | Effect |
-|----------------|-------------------|----------------|--------|
+### Firewall rule format
+
+Each rule: `destination[:ports[/protocol]]`, one per line or separated by semicolons.
+
+| Rule | Meaning |
+|------|---------|
+| `10.0.0.0/8` | All traffic to 10.0.0.0/8 |
+| `0.0.0.0/0:80,443` | TCP ports 80 and 443 to any destination |
+| `0.0.0.0/0:80,443/tcp` | Same as above (tcp is default) |
+| `8.8.8.8/32:53/udp` | UDP port 53 to 8.8.8.8 |
+| `0.0.0.0/0:53/both` | TCP+UDP port 53 to anywhere |
+
+### Profile examples
+
+| Profile | Client AllowedIPs | Firewall rules | Effect |
+|---------|-------------------|----------------|--------|
 | Full Access | `0.0.0.0/0, ::/0` | *(empty)* | Full tunnel, unrestricted |
-| Internal Only | `10.0.0.0/8, 192.168.0.0/16` | `10.0.0.0/8, 192.168.0.0/16` | Split tunnel, internal networks only |
-| Web Only | `0.0.0.0/0, ::/0` | `0.0.0.0/0` | Full tunnel, but server enforces allowed destinations |
+| Web Only | `0.0.0.0/0, ::/0` | `0.0.0.0/0:80,443`<br>`0.0.0.0/0:53/udp` | Full tunnel, only HTTP/HTTPS + DNS |
+| Internal Only | `10.0.0.0/8` | `10.0.0.0/8` | Split tunnel, internal network only |
+| Internal + Web | `0.0.0.0/0, ::/0` | `10.0.0.0/8`<br>`0.0.0.0/0:80,443`<br>`0.0.0.0/0:53/udp` | Full tunnel, internal unrestricted + web + DNS |
 
 A default "Full Access" profile is created automatically on first startup.
 
@@ -443,8 +458,8 @@ Response:
     "is_default": true, "peer_count": 3
   },
   {
-    "id": 2, "name": "Internal Only", "description": "Access to internal networks only",
-    "allowed_ips": "10.0.0.0/8, 192.168.0.0/16", "fw_rules": "10.0.0.0/8, 192.168.0.0/16",
+    "id": 2, "name": "Web Only", "description": "HTTP/HTTPS + DNS only",
+    "allowed_ips": "0.0.0.0/0, ::/0", "fw_rules": "0.0.0.0/0:80,443; 0.0.0.0/0:53/udp",
     "is_default": false, "peer_count": 1
   }
 ]
@@ -457,10 +472,24 @@ curl -X POST /wg/acl-profiles \
   -H "X-API-Key: API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Internal Only",
-    "description": "Access to internal networks only",
-    "allowed_ips": "10.0.0.0/8, 192.168.0.0/16",
-    "fw_rules": "10.0.0.0/8, 192.168.0.0/16"
+    "name": "Web Only",
+    "description": "HTTP/HTTPS and DNS only",
+    "allowed_ips": "0.0.0.0/0, ::/0",
+    "fw_rules": "0.0.0.0/0:80,443; 0.0.0.0/0:53/udp"
+  }'
+```
+
+### Create profile with full internal access + restricted external
+
+```bash
+curl -X POST /wg/acl-profiles \
+  -H "X-API-Key: API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Internal + Web",
+    "description": "Full internal access, external web only",
+    "allowed_ips": "0.0.0.0/0, ::/0",
+    "fw_rules": "10.0.0.0/8; 0.0.0.0/0:80,443; 0.0.0.0/0:53/udp"
   }'
 ```
 
@@ -470,7 +499,7 @@ curl -X POST /wg/acl-profiles \
 curl -X PUT /wg/acl-profiles/2 \
   -H "X-API-Key: API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"fw_rules":"10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"}'
+  -d '{"fw_rules":"0.0.0.0/0:80,443; 0.0.0.0/0:53/both; 10.0.0.0/8"}'
 ```
 
 Updating a profile re-applies iptables rules for all affected peers.

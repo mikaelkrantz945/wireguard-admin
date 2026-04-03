@@ -88,7 +88,14 @@ async def create_interface(req: CreateInterfaceRequest):
 
     iface = db.fetchone("SELECT * FROM wg_interfaces WHERE id = %s", (row["id"],))
     manager.write_server_config(dict(iface), [])
-    return dict(iface)
+    # Auto-start the interface
+    try:
+        manager.interface_up(iface["name"])
+    except RuntimeError:
+        pass  # Config written, but interface start failed — user can retry via Up button
+    result = dict(iface)
+    result["is_up"] = manager.is_interface_up(iface["name"])
+    return result
 
 
 @router.get("/interfaces/{iface_id}", dependencies=[Depends(verify_wireguard)])

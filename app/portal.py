@@ -1,9 +1,12 @@
-"""Portal endpoints — VPN user self-service (view config, QR code)."""
+"""Portal endpoints — VPN user self-service (activation, login, config, QR)."""
 
 import hashlib
 import json
+import os
 import secrets
+import smtplib
 from datetime import datetime, timedelta
+from email.mime.text import MIMEText
 
 import httpx
 from fastapi import APIRouter, HTTPException, Security
@@ -17,12 +20,56 @@ router = APIRouter(prefix="/portal", tags=["Portal"])
 
 _token_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+SMTP_HOST = os.environ.get("SMTP_HOST", "localhost")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
+SMTP_FROM = os.environ.get("SMTP_FROM", "noreply@example.com")
+BASE_URL = os.environ.get("BASE_URL", "https://vpn.example.com")
+
 
 def _hash(s: str) -> str:
     return hashlib.sha256(f"wgportal:{s}".encode()).hexdigest()
 
 
-# -- Portal sessions (separate from admin sessions) --
+# -- Activation --
+
+def send_activation_email(peer_id: int, email: str, name: str, method: str = "password"):
+    """Generate activation token and send email."""
+    token = secrets.token_urlsafe(48)
+    db.execute(
+        "UPDATE wg_peers SET activation_token = %s, activation_method = %s, portal_email = %s, activated = FALSE, enabled = FALSE WHERE id = %s",
+        (_hash(token), method, email, peer_id),
+    )
+    if method == "google":
+        activate_url = f"{BASE_URL}/portal/ui#activate={token}&method=google"
+    else:
+        activate_url = f"{BASE_URL}/portal/ui#activate={token}&method=password"
+
+    body = f"""Hi {name},
+
+Your WireGuard VPN account has been created.
+
+Click the link below to activate your account:
+
+{activate_url}
+
+{"You will be asked to set a password." if method == "password" else "You will sign in with your Google account."}
+
+This link is valid for 7 days.
+
+— WireGuard Admin
+"""
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = "Activate your WireGuard VPN account"
+    msg["From"] = SMTP_FROM
+    msg["To"] = email
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.send_message(msg)
+    except Exception as e:
+        print(f"[email] Failed to send activation to {email}: {e}")
+
+
+# -- Portal sessions --
 
 def _create_session(peer_id: int) -> str:
     token = secrets.token_urlsafe(48)
@@ -30,7 +77,7 @@ def _create_session(peer_id: int) -> str:
     expires = (datetime.utcnow() + timedelta(hours=24)).isoformat()
     db.execute(
         "INSERT INTO sessions (token, user_id, created, expires) VALUES (%s,%s,%s,%s)",
-        (_hash(token), -peer_id, now, expires),  # negative user_id = portal peer session
+        (_hash(token), -peer_id, now, expires),
     )
     return token
 
@@ -57,6 +104,72 @@ async def _require_portal_user(token: str = Security(_token_header)) -> dict:
     return peer
 
 
+# -- Activation endpoints --
+
+class ActivatePasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+class ActivateGoogleRequest(BaseModel):
+    token: str
+
+
+@router.post("/activate/password")
+async def activate_with_password(req: ActivatePasswordRequest):
+    """Activate account and set password."""
+    token_hash = _hash(req.token)
+    peer = db.fetchone(
+        "SELECT * FROM wg_peers WHERE activation_token = %s AND activated = FALSE",
+        (token_hash,),
+    )
+    if not peer:
+        raise HTTPException(400, "Invalid or expired activation link")
+    if len(req.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    db.execute(
+        "UPDATE wg_peers SET portal_password_hash = %s, activated = TRUE, enabled = TRUE, activation_token = '' WHERE id = %s",
+        (_hash(req.password), peer["id"]),
+    )
+
+    # Apply WG config since peer is now enabled
+    peer_ops._sync_config(peer["interface_id"])
+
+    session_token = _create_session(peer["id"])
+    return {
+        "status": "activated",
+        "token": session_token,
+        "peer": {"id": peer["id"], "name": peer["name"], "email": peer.get("portal_email", "")},
+    }
+
+
+@router.post("/activate/google")
+async def activate_with_google(req: ActivateGoogleRequest):
+    """Activate account via Google (just marks as activated)."""
+    token_hash = _hash(req.token)
+    peer = db.fetchone(
+        "SELECT * FROM wg_peers WHERE activation_token = %s AND activated = FALSE",
+        (token_hash,),
+    )
+    if not peer:
+        raise HTTPException(400, "Invalid or expired activation link")
+
+    db.execute(
+        "UPDATE wg_peers SET activated = TRUE, enabled = TRUE, activation_token = '' WHERE id = %s",
+        (peer["id"],),
+    )
+
+    peer_ops._sync_config(peer["interface_id"])
+
+    session_token = _create_session(peer["id"])
+    return {
+        "status": "activated",
+        "token": session_token,
+        "peer": {"id": peer["id"], "name": peer["name"], "email": peer.get("portal_email", "")},
+    }
+
+
 # -- Auth --
 
 class PortalLoginRequest(BaseModel):
@@ -79,6 +192,8 @@ async def portal_login(req: PortalLoginRequest):
     )
     if not peer or peer["portal_password_hash"] != _hash(req.password):
         raise HTTPException(401, "Invalid email or password")
+    if not peer.get("activated"):
+        raise HTTPException(403, "Account not yet activated. Check your email for the activation link.")
     if not peer["enabled"]:
         raise HTTPException(403, "Your VPN account is disabled")
 
@@ -98,7 +213,6 @@ async def portal_google_login(req: GoogleLoginRequest):
 
     config = json.loads(integ["config"]) if integ["config"] else {}
 
-    # Exchange code for tokens and get user info
     try:
         token_resp = httpx.post("https://oauth2.googleapis.com/token", data={
             "client_id": config["client_id"],
@@ -123,12 +237,13 @@ async def portal_google_login(req: GoogleLoginRequest):
     if not email:
         raise HTTPException(400, "Could not get email from Google")
 
-    # Find peer by portal_email or note (email stored during import)
     peer = db.fetchone("SELECT * FROM wg_peers WHERE portal_email = %s", (email,))
     if not peer:
         peer = db.fetchone("SELECT * FROM wg_peers WHERE note = %s", (email,))
     if not peer:
         raise HTTPException(404, f"No VPN account found for {email}")
+    if not peer.get("activated"):
+        raise HTTPException(403, "Account not yet activated. Check your email for the activation link.")
     if not peer["enabled"]:
         raise HTTPException(403, "Your VPN account is disabled")
 
@@ -146,6 +261,28 @@ async def portal_logout(token: str = Security(_token_header)):
     return {"ok": True}
 
 
+# -- Admin: send activation --
+
+class SendActivationRequest(BaseModel):
+    peer_id: int
+    method: str = "password"  # "password" or "google"
+
+
+@router.post("/send-activation")
+async def send_activation(req: SendActivationRequest):
+    """Admin endpoint: send activation email to a peer."""
+    from .admin import _require_admin
+    peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (req.peer_id,))
+    if not peer:
+        raise HTTPException(404, "Peer not found")
+    email = peer.get("portal_email") or peer.get("note", "")
+    if not email or "@" not in email:
+        raise HTTPException(400, "Peer has no valid email. Set portal_email first.")
+    name = peer["name"]
+    send_activation_email(peer["id"], email, name, req.method)
+    return {"sent": True, "email": email, "method": req.method}
+
+
 # -- Self-service endpoints --
 
 @router.get("/me")
@@ -156,6 +293,7 @@ async def portal_me(peer: dict = Security(_require_portal_user)):
         "email": peer.get("portal_email") or peer.get("note", ""),
         "allowed_ips": peer["allowed_ips"],
         "enabled": peer["enabled"],
+        "activated": peer.get("activated", False),
     }
 
 

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WireGuard VPN — My Account</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e1e4e8;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.page{display:none;width:100%;max-width:480px;padding:1rem}
+.page.active{display:block}
+.box{background:#1c1f26;padding:2rem;border-radius:8px}
+.box h1{margin-bottom:.3rem;font-size:1.4rem}
+.box p{color:#8b949e;font-size:.85rem;margin-bottom:1rem}
+.box input{width:100%;padding:.6rem;margin:.4rem 0;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.95rem}
+.box button,.btn{width:100%;padding:.6rem;margin-top:.5rem;background:#238636;border:none;border-radius:4px;color:#fff;font-size:1rem;cursor:pointer}
+.box button:hover,.btn:hover{background:#2ea043}
+.btn-google{background:#4285f4;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.btn-google:hover{background:#3367d6}
+.divider{display:flex;align-items:center;gap:1rem;margin:1rem 0;color:#8b949e;font-size:.85rem}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#30363d}
+.err{color:#f85149;margin-top:.5rem;font-size:.85rem}
+#appView{display:none;width:100%;max-width:520px;padding:1rem}
+.card{background:#1c1f26;border:1px solid #30363d;border-radius:8px;padding:1.5rem;margin-bottom:1rem}
+.card h2{font-size:1.1rem;margin-bottom:.5rem}
+.card .label{color:#8b949e;font-size:.82rem}
+.card .value{font-size:.95rem;margin-bottom:.5rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600}
+.badge-enabled{background:#1f3b2f;color:#3fb950}.badge-disabled{background:#3b1f1f;color:#f85149}
+.qr-container{text-align:center;margin:1rem 0}
+.qr-container img{border-radius:8px;background:#fff;padding:8px;max-width:280px}
+.config-display{background:#0f1117;border:1px solid #30363d;border-radius:4px;padding:.8rem;white-space:pre-wrap;font-family:monospace;font-size:.82rem;color:#e1e4e8;max-height:250px;overflow-y:auto;margin:.5rem 0}
+.actions{display:flex;gap:.5rem;margin-top:.5rem}
+.actions button{width:auto;padding:.5rem 1rem;font-size:.85rem}
+.btn-secondary{background:#30363d}.btn-secondary:hover{background:#3d444d}
+.btn-sm{padding:.4rem .8rem;font-size:.85rem}
+.logout{color:#8b949e;cursor:pointer;font-size:.85rem;text-align:right;margin-bottom:1rem}
+.logout:hover{color:#e1e4e8}
+header{text-align:center;margin-bottom:1rem}
+header h1{font-size:1.3rem;font-weight:600}
+header p{color:#8b949e;font-size:.85rem}
+</style>
+</head>
+<body>
+
+<!-- Login Page -->
+<div class="page active" id="pgLogin">
+  <div class="box">
+    <h1>WireGuard VPN</h1>
+    <p>Sign in to view your VPN configuration</p>
+    <div id="googleLoginSection" style="display:none">
+      <button class="btn btn-google" onclick="doGoogleLogin()">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#fff" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#fff" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" opacity=".7"/><path fill="#fff" d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" opacity=".5"/><path fill="#fff" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" opacity=".8"/></svg>
+        Sign in with Google
+      </button>
+      <div class="divider">or</div>
+    </div>
+    <input type="email" id="loginEmail" placeholder="Email" autocomplete="email">
+    <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password">
+    <button onclick="doLogin()">Sign In</button>
+    <p class="err" id="loginErr"></p>
+  </div>
+</div>
+
+<!-- Google OAuth Code Page -->
+<div class="page" id="pgGoogleCode">
+  <div class="box">
+    <h1>Google Sign-In</h1>
+    <p>Paste the authorization code from Google:</p>
+    <input type="text" id="googleCode" placeholder="Authorization code" style="text-align:center">
+    <button onclick="doGoogleCodeExchange()">Verify</button>
+    <p class="err" id="googleCodeErr"></p>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="appView">
+  <header>
+    <h1>WireGuard VPN</h1>
+    <p id="welcomeMsg"></p>
+  </header>
+  <div class="logout" onclick="doLogout()">Sign out</div>
+
+  <div class="card">
+    <h2>Your VPN Configuration</h2>
+    <div class="label">Name</div>
+    <div class="value" id="peerName"></div>
+    <div class="label">VPN IP Address</div>
+    <div class="value" id="peerIp" style="font-family:monospace"></div>
+    <div class="label">Status</div>
+    <div class="value" id="peerStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>QR Code — Scan with WireGuard App</h2>
+    <div class="qr-container"><img id="peerQr"></div>
+  </div>
+
+  <div class="card">
+    <h2>Configuration File</h2>
+    <div class="actions">
+      <button class="btn-sm btn" onclick="downloadConfig()">Download .conf</button>
+      <button class="btn-sm btn-secondary" onclick="copyConfig()">Copy to Clipboard</button>
+    </div>
+    <div class="config-display" id="peerConfig"></div>
+  </div>
+</div>
+
+<script>
+let TOKEN=sessionStorage.getItem('ptk')||'';
+let PEER=JSON.parse(sessionStorage.getItem('ppeer')||'null');
+let _googleIntegId=0;
+let _googleClientId='';
+let _peerConfig='';
+
+async function api(p,o={}){
+  const h={'Content-Type':'application/json',...(o.headers||{})};
+  if(TOKEN)h['X-API-Key']=TOKEN;
+  const r=await fetch(p,{...o,headers:h});
+  if(r.status===401&&!p.includes('/auth/')){doLogout();throw new Error('expired')}
+  return r;
+}
+
+function pg(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('appView').style.display='none';if(id==='app'){document.getElementById('appView').style.display='block'}else{document.getElementById(id).classList.add('active')}}
+
+// Check if Google login is available
+async function checkGoogleLogin(){
+  try{
+    const r=await fetch('/portal/google-enabled');
+    const d=await r.json();
+    if(d.enabled){
+      _googleIntegId=d.integration_id;
+      _googleClientId=d.client_id;
+      document.getElementById('googleLoginSection').style.display='';
+    }
+  }catch(e){}
+}
+
+// Local login
+async function doLogin(){
+  const e=document.getElementById('loginEmail').value,p=document.getElementById('loginPass').value;
+  if(!e||!p)return;
+  try{
+    const r=await api('/portal/auth/login',{method:'POST',body:JSON.stringify({email:e,password:p})});
+    if(!r.ok){document.getElementById('loginErr').textContent='Invalid email or password';return}
+    const d=await r.json();
+    TOKEN=d.token;PEER=d.peer;
+    sessionStorage.setItem('ptk',TOKEN);sessionStorage.setItem('ppeer',JSON.stringify(PEER));
+    showApp();
+  }catch(x){document.getElementById('loginErr').textContent='Connection error'}
+}
+
+// Google OAuth login
+function doGoogleLogin(){
+  const redirect=encodeURIComponent(location.origin+'/portal/ui');
+  const scope=encodeURIComponent('email profile');
+  const url=`https://accounts.google.com/o/oauth2/v2/auth?client_id=${_googleClientId}&redirect_uri=${redirect}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
+  window.open(url,'_blank');
+  pg('pgGoogleCode');
+}
+
+async function doGoogleCodeExchange(){
+  const code=document.getElementById('googleCode').value.trim();
+  if(!code){document.getElementById('googleCodeErr').textContent='Paste the code from Google';return}
+  try{
+    const r=await api('/portal/auth/google',{method:'POST',body:JSON.stringify({
+      integration_id:_googleIntegId,code:code,redirect_uri:location.origin+'/portal/ui'
+    })});
+    if(!r.ok){const e=await r.json();document.getElementById('googleCodeErr').textContent=e.detail||'Failed';return}
+    const d=await r.json();
+    TOKEN=d.token;PEER=d.peer;
+    sessionStorage.setItem('ptk',TOKEN);sessionStorage.setItem('ppeer',JSON.stringify(PEER));
+    showApp();
+  }catch(x){document.getElementById('googleCodeErr').textContent='Connection error'}
+}
+
+function doLogout(){
+  api('/portal/auth/logout',{method:'POST'}).catch(()=>{});
+  TOKEN='';PEER=null;
+  sessionStorage.removeItem('ptk');sessionStorage.removeItem('ppeer');
+  pg('pgLogin');
+}
+
+async function showApp(){
+  pg('app');
+  document.getElementById('welcomeMsg').textContent=`Welcome, ${PEER.name}`;
+  // Load config and QR
+  const[cfgR,qrR,meR]=await Promise.all([
+    api('/portal/config').then(r=>r.json()),
+    api('/portal/qr').then(r=>r.json()),
+    api('/portal/me').then(r=>r.json()),
+  ]);
+  _peerConfig=cfgR.config;
+  document.getElementById('peerName').textContent=meR.name;
+  document.getElementById('peerIp').textContent=meR.allowed_ips;
+  document.getElementById('peerStatus').innerHTML=meR.enabled?'<span class="badge badge-enabled">enabled</span>':'<span class="badge badge-disabled">disabled</span>';
+  document.getElementById('peerQr').src=qrR.qr_code;
+  document.getElementById('peerConfig').textContent=cfgR.config;
+}
+
+function downloadConfig(){
+  const blob=new Blob([_peerConfig],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=(PEER.name||'wireguard')+'.conf';a.click();
+}
+function copyConfig(){navigator.clipboard.writeText(_peerConfig)}
+
+// Init
+(function(){
+  checkGoogleLogin();
+  if(TOKEN&&PEER){showApp()}
+})();
+</script>
+</body>
+</html>

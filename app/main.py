@@ -12,6 +12,7 @@ from .admin import router as admin_router
 from .wireguard.routes import router as wg_router
 from .hostbill.routes import router as hostbill_router
 from .integrations.routes import router as integrations_router
+from .portal import router as portal_router
 from .middleware import RequestLogMiddleware
 from . import users, db
 
@@ -34,6 +35,7 @@ app.include_router(admin_router)
 app.include_router(wg_router)
 app.include_router(hostbill_router)
 app.include_router(integrations_router)
+app.include_router(portal_router)
 
 # Serve admin UI
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -42,6 +44,11 @@ _static_dir = os.path.join(os.path.dirname(__file__), "static")
 @app.get("/admin/ui", include_in_schema=False)
 async def admin_ui():
     return FileResponse(os.path.join(_static_dir, "admin.html"))
+
+
+@app.get("/portal/ui", include_in_schema=False)
+async def portal_ui():
+    return FileResponse(os.path.join(_static_dir, "portal.html"))
 
 
 @app.get("/health")

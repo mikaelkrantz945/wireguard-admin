@@ -4,6 +4,19 @@ WireGuard VPN administration system with a web-based admin GUI, REST API, per-pe
 
 Open-source VPN management for hosting providers and teams.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Peers](docs/screenshots/peers.png) |
+| **Dashboard** — Active peers, traffic stats, interface status | **Peers** — Manage VPN peers with live status, ACL, groups |
+| ![ACL Profiles](docs/screenshots/acl-profiles.png) | ![Interfaces](docs/screenshots/interfaces.png) |
+| **ACL Profiles** — Firewall rule builder with port/protocol control | **Interfaces** — WireGuard server interfaces with up/down control |
+| ![Groups](docs/screenshots/groups.png) | ![Request Logs](docs/screenshots/request-logs.png) |
+| **Groups** — Organize peers with inherited ACL profiles | **Request Logs** — API request logging with filtering |
+| ![API Keys](docs/screenshots/api-keys.png) | ![Login](docs/screenshots/login.png) |
+| **API Keys** — Scoped keys with IP ACL | **Login** — Email + password + optional 2FA |
+
 ## Features
 
 - **Admin GUI** — Dark-themed single-page application for managing peers, interfaces, ACL profiles, API keys, users, and request logs

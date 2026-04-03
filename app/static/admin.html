@@ -70,6 +70,13 @@ tr:hover{background:#1c1f26}
 .empty{color:#8b949e;text-align:center;padding:2rem}
 .qr-container{text-align:center;margin:1rem 0}
 .qr-container img{border-radius:8px;background:#fff;padding:8px;max-width:250px}
+.fw-rule{display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem;flex-wrap:wrap}
+.fw-rule select,.fw-rule input{padding:.35rem .4rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.82rem}
+.fw-rule .fw-dest{flex:1;min-width:130px}
+.fw-rule .fw-proto{width:72px}
+.fw-rule .fw-ports{flex:1;min-width:100px}
+.fw-rule .fw-action{width:78px}
+.fw-rule .fw-rm{background:none;border:none;color:#f85149;cursor:pointer;font-size:1rem;padding:.2rem .4rem}
 </style>
 </head>
 <body>
@@ -160,7 +167,7 @@ tr:hover{background:#1c1f26}
     <!-- ACL Profiles -->
     <div class="tab" id="tab-acl">
       <div class="toolbar">
-        <button class="btn btn-primary" onclick="showModal('createAclModal')">+ New Profile</button>
+        <button class="btn btn-primary" onclick="showCreateAcl()">+ New Profile</button>
       </div>
       <table><thead><tr><th>ID</th><th>Name</th><th>Description</th><th>Client AllowedIPs</th><th>Firewall Rules</th><th>Peers</th><th>Default</th><th></th></tr></thead><tbody id="aclTable"></tbody></table>
     </div>
@@ -326,14 +333,16 @@ tr:hover{background:#1c1f26}
 
 <!-- Create ACL Profile Modal -->
 <div class="modal-bg" id="createAclModal">
-  <div class="modal">
+  <div class="modal" style="width:620px">
     <h2>Create ACL Profile</h2>
     <label>Name<input type="text" id="newAclName" placeholder="e.g. Web Only"></label>
     <label>Description<input type="text" id="newAclDesc" placeholder="Optional"></label>
     <label>Client AllowedIPs<input type="text" id="newAclAllowedIps" value="0.0.0.0/0, ::/0" placeholder="0.0.0.0/0, ::/0"></label>
     <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">What the client routes through the tunnel. Use 0.0.0.0/0 for full tunnel.</p>
-    <label>Firewall Rules<textarea id="newAclFwRules" rows="3" placeholder="0.0.0.0/0:80,443&#10;10.0.0.0/8&#10;8.8.8.8/32:53/udp" style="font-family:monospace;font-size:.82rem"></textarea></label>
-    <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">Server-side iptables enforcement. One rule per line: <code>destination[:ports[/proto]]</code><br>Empty = no restriction. Proto: tcp (default), udp, both.</p>
+    <label style="margin-top:.7rem">Firewall Rules</label>
+    <p style="color:#8b949e;font-size:.78rem;margin-bottom:.5rem">Server-side enforcement. No rules = unrestricted access.</p>
+    <div id="newAclRules"></div>
+    <button class="btn btn-sm btn-secondary" onclick="addFwRule('newAclRules')" style="margin-top:.3rem">+ Add Rule</button>
     <p class="err" id="newAclErr"></p>
     <div class="actions">
       <button class="btn btn-secondary" onclick="closeModal('createAclModal')">Cancel</button>
@@ -344,13 +353,15 @@ tr:hover{background:#1c1f26}
 
 <!-- Edit ACL Profile Modal -->
 <div class="modal-bg" id="editAclModal">
-  <div class="modal">
+  <div class="modal" style="width:620px">
     <h2>Edit ACL Profile</h2>
     <input type="hidden" id="editAclId">
     <label>Name<input type="text" id="editAclName"></label>
     <label>Description<input type="text" id="editAclDesc"></label>
     <label>Client AllowedIPs<input type="text" id="editAclAllowedIps"></label>
-    <label>Firewall Rules<textarea id="editAclFwRules" rows="3" style="font-family:monospace;font-size:.82rem"></textarea></label>
+    <label style="margin-top:.7rem">Firewall Rules</label>
+    <div id="editAclRules"></div>
+    <button class="btn btn-sm btn-secondary" onclick="addFwRule('editAclRules')" style="margin-top:.3rem">+ Add Rule</button>
     <p class="err" id="editAclErr"></p>
     <div class="actions">
       <button class="btn btn-danger" onclick="doDeleteAcl()" style="margin-right:auto">Delete</button>
@@ -620,20 +631,96 @@ async function populateAclDropdown(selectId,selectedId){
   const sel=document.getElementById(selectId);
   sel.innerHTML='<option value="0">Default (Full Access)</option>'+profiles.map(p=>`<option value="${p.id}"${p.id===selectedId?' selected':''}>${p.name}</option>`).join('');
 }
+
+// -- Rule builder --
+function addFwRule(containerId,dest='',proto='any',ports='',action='accept'){
+  const div=document.createElement('div');div.className='fw-rule';
+  div.innerHTML=`<input class="fw-dest" type="text" placeholder="0.0.0.0/0 or 10.0.0.0/8" value="${dest}">
+    <select class="fw-proto" onchange="fwProtoChange(this)"><option value="any"${proto==='any'?' selected':''}>Any</option><option value="tcp"${proto==='tcp'?' selected':''}>TCP</option><option value="udp"${proto==='udp'?' selected':''}>UDP</option><option value="both"${proto==='both'?' selected':''}>TCP+UDP</option></select>
+    <input class="fw-ports" type="text" placeholder="80, 443" value="${ports}"${proto==='any'?' disabled':''}>
+    <select class="fw-action"><option value="accept"${action==='accept'?' selected':''}>ACCEPT</option><option value="drop"${action==='drop'?' selected':''}>DROP</option></select>
+    <button class="fw-rm" onclick="this.parentElement.remove()" title="Remove">&times;</button>`;
+  document.getElementById(containerId).appendChild(div);
+}
+function fwProtoChange(sel){
+  const ports=sel.parentElement.querySelector('.fw-ports');
+  if(sel.value==='any'){ports.value='';ports.disabled=true}else{ports.disabled=false}
+}
+function serializeFwRules(containerId){
+  const rows=document.getElementById(containerId).querySelectorAll('.fw-rule');
+  const rules=[];
+  rows.forEach(row=>{
+    const dest=row.querySelector('.fw-dest').value.trim();if(!dest)return;
+    const proto=row.querySelector('.fw-proto').value;
+    const ports=row.querySelector('.fw-ports').value.trim().replace(/\s+/g,'');
+    const action=row.querySelector('.fw-action').value;
+    let rule=dest;
+    if(proto!=='any'&&ports){rule+=':'+ports+'/'+proto}
+    else if(proto!=='any'){rule+=':/'+proto}
+    if(action==='drop')rule='!'+rule;
+    rules.push(rule);
+  });
+  return rules.join('; ');
+}
+function deserializeFwRules(containerId,fwRules){
+  document.getElementById(containerId).innerHTML='';
+  if(!fwRules||!fwRules.trim())return;
+  const entries=fwRules.replace(/\n/g,';').split(';').map(s=>s.trim()).filter(Boolean);
+  entries.forEach(entry=>{
+    let action='accept';
+    if(entry.startsWith('!')){action='drop';entry=entry.slice(1)}
+    let dest='',proto='any',ports='';
+    if(entry.includes(':')){
+      const[d,portSpec]=entry.split(':',2);
+      dest=d.trim();
+      if(portSpec.includes('/')){
+        const parts=portSpec.rsplit?portSpec.split('/'):portSpec.split('/');
+        const lastPart=parts[parts.length-1];
+        if(['tcp','udp','both'].includes(lastPart)){
+          proto=lastPart;ports=parts.slice(0,-1).join('/').trim();
+        }else{proto='tcp';ports=portSpec.trim()}
+      }else{proto='tcp';ports=portSpec.trim()}
+    }else{dest=entry.trim()}
+    addFwRule(containerId,dest,proto,ports,action);
+  });
+}
+function fmtFwRules(fwRules){
+  if(!fwRules||!fwRules.trim())return'<span style="color:#8b949e">unrestricted</span>';
+  const entries=fwRules.replace(/\n/g,';').split(';').map(s=>s.trim()).filter(Boolean);
+  return entries.map(e=>{
+    let action='ACCEPT',cls='enabled';
+    if(e.startsWith('!')){action='DROP';cls='disabled';e=e.slice(1)}
+    let dest=e,proto='',ports='';
+    if(e.includes(':')){const[d,ps]=e.split(':',2);dest=d;
+      if(ps.includes('/')){const p=ps.split('/');proto=p.pop();ports=p.join('/')}else{proto='tcp';ports=ps}}
+    let label=dest;
+    if(ports)label+=` :${ports}/${proto}`;
+    else if(proto)label+=` /${proto}`;
+    return`<span class="badge badge-${cls}" style="margin:1px" title="${action}">${label}</span>`;
+  }).join(' ');
+}
+
+function showCreateAcl(){
+  document.getElementById('newAclName').value='';document.getElementById('newAclDesc').value='';
+  document.getElementById('newAclAllowedIps').value='0.0.0.0/0, ::/0';
+  document.getElementById('newAclRules').innerHTML='';
+  document.getElementById('newAclErr').textContent='';
+  showModal('createAclModal');
+}
 async function loadAclProfiles(){
   const profiles=await api('/wg/acl-profiles').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const adm=USER&&USER.role==='admin';
   document.getElementById('aclTable').innerHTML=profiles.length?profiles.map(p=>`<tr>
     <td>${p.id}</td><td>${p.name}</td><td>${p.description||'-'}</td>
     <td class="mono" style="font-size:.78rem">${p.allowed_ips}</td>
-    <td class="mono" style="font-size:.78rem">${p.fw_rules||'<span style="color:#8b949e">any</span>'}</td>
+    <td style="font-size:.78rem">${fmtFwRules(p.fw_rules)}</td>
     <td>${p.peer_count||0}</td>
     <td>${p.is_default?badge('default','active'):'-'}</td>
     <td>${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditAcl(${p.id})">Edit</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="8" class="empty">No profiles</td></tr>';
 }
 async function doCreateAcl(){
-  const d={name:document.getElementById('newAclName').value,description:document.getElementById('newAclDesc').value,allowed_ips:document.getElementById('newAclAllowedIps').value,fw_rules:document.getElementById('newAclFwRules').value};
+  const d={name:document.getElementById('newAclName').value,description:document.getElementById('newAclDesc').value,allowed_ips:document.getElementById('newAclAllowedIps').value,fw_rules:serializeFwRules('newAclRules')};
   if(!d.name){document.getElementById('newAclErr').textContent='Name is required';return}
   const r=await api('/wg/acl-profiles',{method:'POST',body:JSON.stringify(d)});
   if(r.ok){closeModal('createAclModal');loadAclProfiles()}else{const e=await r.json();document.getElementById('newAclErr').textContent=e.detail||'Failed'}
@@ -645,12 +732,12 @@ async function showEditAcl(id){
   document.getElementById('editAclName').value=p.name;
   document.getElementById('editAclDesc').value=p.description||'';
   document.getElementById('editAclAllowedIps').value=p.allowed_ips;
-  document.getElementById('editAclFwRules').value=p.fw_rules||'';
+  deserializeFwRules('editAclRules',p.fw_rules||'');
   document.getElementById('editAclErr').textContent='';showModal('editAclModal');
 }
 async function doEditAcl(){
   const id=document.getElementById('editAclId').value;
-  const d={name:document.getElementById('editAclName').value,description:document.getElementById('editAclDesc').value,allowed_ips:document.getElementById('editAclAllowedIps').value,fw_rules:document.getElementById('editAclFwRules').value};
+  const d={name:document.getElementById('editAclName').value,description:document.getElementById('editAclDesc').value,allowed_ips:document.getElementById('editAclAllowedIps').value,fw_rules:serializeFwRules('editAclRules')};
   const r=await api(`/wg/acl-profiles/${id}`,{method:'PUT',body:JSON.stringify(d)});
   if(r.ok){closeModal('editAclModal');loadAclProfiles()}else{const e=await r.json();document.getElementById('editAclErr').textContent=e.detail||'Failed'}
 }

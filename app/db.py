@@ -177,10 +177,25 @@ def init_schema():
                     allocated_at TEXT NOT NULL
                 )
             """)
-            # Add acl_profile_id to wg_peers if missing (migration)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS wg_groups (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT UNIQUE NOT NULL,
+                    description TEXT DEFAULT '',
+                    acl_profile_id INTEGER DEFAULT 0,
+                    created TEXT NOT NULL
+                )
+            """)
+            # Migrations for existing installs
             cur.execute("""
                 DO $$ BEGIN
                     ALTER TABLE wg_peers ADD COLUMN acl_profile_id INTEGER DEFAULT 0;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE wg_peers ADD COLUMN group_id INTEGER DEFAULT 0;
                 EXCEPTION WHEN duplicate_column THEN NULL;
                 END $$
             """)

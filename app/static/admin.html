@@ -132,6 +132,7 @@ tr:hover{background:#1c1f26}
     <button class="active" onclick="showTab('dashboard',this)">Dashboard</button>
     <button onclick="showTab('peers',this)">Peers</button>
     <button onclick="showTab('interfaces',this)">Interfaces</button>
+    <button onclick="showTab('groups',this)">Groups</button>
     <button onclick="showTab('acl',this)">ACL Profiles</button>
     <button onclick="showTab('keys',this)">API Keys</button>
     <button onclick="showTab('logs',this)">Request Logs</button>
@@ -153,7 +154,7 @@ tr:hover{background:#1c1f26}
         <input type="text" id="peerFilter" placeholder="Filter peers..." oninput="filterPeers()">
         <button class="btn btn-primary" onclick="showCreatePeer()">+ New Peer</button>
       </div>
-      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>ACL</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
+      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Group</th><th>ACL</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
     </div>
 
     <!-- Interfaces -->
@@ -162,6 +163,14 @@ tr:hover{background:#1c1f26}
         <button class="btn btn-primary" onclick="showModal('createIfaceModal')">+ New Interface</button>
       </div>
       <table><thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Subnet</th><th>Port</th><th>Endpoint</th><th>Peers</th><th>Status</th><th></th></tr></thead><tbody id="ifacesTable"></tbody></table>
+    </div>
+
+    <!-- Groups -->
+    <div class="tab" id="tab-groups">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showCreateGroup()">+ New Group</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>Name</th><th>Description</th><th>ACL Profile</th><th>Peers</th><th>Created</th><th></th></tr></thead><tbody id="groupsTable"></tbody></table>
     </div>
 
     <!-- ACL Profiles -->
@@ -215,6 +224,7 @@ tr:hover{background:#1c1f26}
     <input type="hidden" id="newPeerIface">
     <label>Name<input type="text" id="newPeerName" placeholder="e.g. johns-laptop"></label>
     <label>Note<input type="text" id="newPeerNote" placeholder="Optional"></label>
+    <label>Group<select id="newPeerGroup" onchange="onPeerGroupChange('new')"></select></label>
     <label>ACL Profile<select id="newPeerAcl"></select></label>
     <label>DNS (override)<input type="text" id="newPeerDns" placeholder="Leave empty for default"></label>
     <label>Keepalive<input type="number" id="newPeerKeepalive" value="25"></label>
@@ -250,6 +260,7 @@ tr:hover{background:#1c1f26}
     <input type="hidden" id="editPeerId">
     <label>Name<input type="text" id="editPeerName"></label>
     <label>Note<input type="text" id="editPeerNote"></label>
+    <label>Group<select id="editPeerGroup" onchange="onPeerGroupChange('edit')"></select></label>
     <label>ACL Profile<select id="editPeerAcl"></select></label>
     <label>DNS<input type="text" id="editPeerDns"></label>
     <label>Keepalive<input type="number" id="editPeerKeepalive"></label>
@@ -331,6 +342,40 @@ tr:hover{background:#1c1f26}
   </div>
 </div>
 
+<!-- Create Group Modal -->
+<div class="modal-bg" id="createGroupModal">
+  <div class="modal">
+    <h2>Create Group</h2>
+    <label>Name<input type="text" id="newGroupName" placeholder="e.g. Kund, Dev, Admin"></label>
+    <label>Description<input type="text" id="newGroupDesc" placeholder="Optional"></label>
+    <label>ACL Profile<select id="newGroupAcl"></select></label>
+    <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">All peers added to this group will inherit this ACL profile.</p>
+    <p class="err" id="newGroupErr"></p>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('createGroupModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doCreateGroup()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Group Modal -->
+<div class="modal-bg" id="editGroupModal">
+  <div class="modal">
+    <h2>Edit Group</h2>
+    <input type="hidden" id="editGroupId">
+    <label>Name<input type="text" id="editGroupName"></label>
+    <label>Description<input type="text" id="editGroupDesc"></label>
+    <label>ACL Profile<select id="editGroupAcl"></select></label>
+    <p style="color:#8b949e;font-size:.78rem;margin-top:.2rem">Changing ACL profile updates all peers in this group.</p>
+    <p class="err" id="editGroupErr"></p>
+    <div class="actions">
+      <button class="btn btn-danger" onclick="doDeleteGroup()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-secondary" onclick="closeModal('editGroupModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doEditGroup()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Create ACL Profile Modal -->
 <div class="modal-bg" id="createAclModal">
   <div class="modal" style="width:620px">
@@ -391,7 +436,7 @@ function badge(t,c){return`<span class="badge badge-${c||t}">${t}</span>`}
 function ts(s){return s?s.replace('T',' ').slice(0,19):'-'}
 function fmtBytes(b){if(!b||b===0)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 function fmtHandshake(epoch){if(!epoch)return'-';const d=Math.floor(Date.now()/1000)-epoch;if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago'}
-function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,acl:loadAclProfiles,keys:loadKeys,logs:loadLogs,users:loadUsers,security:loadSecurity})[n]?.()}
+function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,groups:loadGroups,acl:loadAclProfiles,keys:loadKeys,logs:loadLogs,users:loadUsers,security:loadSecurity})[n]?.()}
 function showModal(id){document.getElementById(id).classList.add('show')}
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 
@@ -473,6 +518,7 @@ function filterPeers(){
   const adm=USER&&USER.role==='admin';
   document.getElementById('peersTable').innerHTML=f.length?f.map(p=>`<tr>
     <td>${p.id}</td><td>${p.name}</td><td class="mono">${p.allowed_ips}</td>
+    <td>${p.group_name?badge(p.group_name,'hostbill'):'-'}</td>
     <td>${badge(p.acl_profile_name||'Default','all')}</td>
     <td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td>
     <td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td>
@@ -481,7 +527,7 @@ function filterPeers(){
       <button class="btn btn-sm btn-secondary" onclick="showPeerConfig(${p.id},'${p.name}')">Config</button>
       ${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditPeer(${p.id})">Edit</button>
       <button class="btn btn-sm ${p.enabled?'btn-danger':'btn-primary'}" onclick="${p.enabled?'togglePeer('+p.id+',false)':'togglePeer('+p.id+',true)'}">${p.enabled?'Disable':'Enable'}</button>`:''}
-    </td></tr>`).join(''):'<tr><td colspan="9" class="empty">No peers</td></tr>';
+    </td></tr>`).join(''):'<tr><td colspan="10" class="empty">No peers</td></tr>';
 }
 async function showCreatePeer(){
   const ifaceId=document.getElementById('peerIfaceFilter').value;
@@ -491,12 +537,12 @@ async function showCreatePeer(){
   document.getElementById('newPeerDns').value='';document.getElementById('newPeerKeepalive').value='25';
   document.getElementById('newPeerErr').textContent='';document.getElementById('newPeerResult').innerHTML='';
   document.getElementById('createPeerBtn').style.display='';
-  await populateAclDropdown('newPeerAcl',0);
+  await Promise.all([populateAclDropdown('newPeerAcl',0),populateGroupDropdown('newPeerGroup',0)]);
   showModal('createPeerModal');
 }
 async function doCreatePeer(){
   const ifaceId=document.getElementById('newPeerIface').value;
-  const d={name:document.getElementById('newPeerName').value,note:document.getElementById('newPeerNote').value,dns:document.getElementById('newPeerDns').value,persistent_keepalive:parseInt(document.getElementById('newPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('newPeerAcl').value)||0};
+  const d={name:document.getElementById('newPeerName').value,note:document.getElementById('newPeerNote').value,dns:document.getElementById('newPeerDns').value,persistent_keepalive:parseInt(document.getElementById('newPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('newPeerAcl').value)||0,group_id:parseInt(document.getElementById('newPeerGroup').value)||0};
   if(!d.name){document.getElementById('newPeerErr').textContent='Name is required';return}
   const r=await api(`/wg/interfaces/${ifaceId}/peers`,{method:'POST',body:JSON.stringify(d)});
   if(r.ok){
@@ -525,12 +571,12 @@ async function showEditPeer(id){
   document.getElementById('editPeerId').value=id;
   document.getElementById('editPeerName').value=p.name;document.getElementById('editPeerNote').value=p.note||'';
   document.getElementById('editPeerDns').value=p.dns||'';document.getElementById('editPeerKeepalive').value=p.persistent_keepalive||25;
-  await populateAclDropdown('editPeerAcl',p.acl_profile_id||0);
+  await Promise.all([populateAclDropdown('editPeerAcl',p.acl_profile_id||0),populateGroupDropdown('editPeerGroup',p.group_id||0)]);
   document.getElementById('editPeerErr').textContent='';showModal('editPeerModal');
 }
 async function doEditPeer(){
   const id=document.getElementById('editPeerId').value;
-  const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('editPeerAcl').value)||0};
+  const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('editPeerAcl').value)||0,group_id:parseInt(document.getElementById('editPeerGroup').value)||0};
   const r=await api(`/wg/peers/${id}`,{method:'PUT',body:JSON.stringify(d)});
   if(r.ok){closeModal('editPeerModal');loadPeers()}else{const e=await r.json();document.getElementById('editPeerErr').textContent=e.detail||'Failed'}
 }
@@ -623,6 +669,66 @@ async function verifyTotp(){
 async function disableTotp(){
   if(!confirm('Disable 2FA?'))return;
   await api('/admin/auth/totp/disable',{method:'POST'});loadSecurity();
+}
+
+// ── Groups ──
+let _groupsCache=[];
+async function populateGroupDropdown(selectId,selectedId){
+  _groupsCache=await api('/wg/groups').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const sel=document.getElementById(selectId);
+  sel.innerHTML='<option value="0">(No group)</option>'+_groupsCache.map(g=>`<option value="${g.id}"${g.id===selectedId?' selected':''}>${g.name}${g.acl_profile_name?' — '+g.acl_profile_name:''}</option>`).join('');
+}
+function onPeerGroupChange(prefix){
+  const groupId=parseInt(document.getElementById(prefix+'PeerGroup').value)||0;
+  if(!groupId)return;
+  const group=_groupsCache.find(g=>g.id===groupId);
+  if(group&&group.acl_profile_id){
+    document.getElementById(prefix+'PeerAcl').value=group.acl_profile_id;
+  }
+}
+async function loadGroups(){
+  const grps=await api('/wg/groups').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const adm=USER&&USER.role==='admin';
+  document.getElementById('groupsTable').innerHTML=grps.length?grps.map(g=>`<tr>
+    <td>${g.id}</td><td>${g.name}</td><td>${g.description||'-'}</td>
+    <td>${g.acl_profile_name?badge(g.acl_profile_name,'all'):'-'}</td>
+    <td>${g.peer_count||0}</td>
+    <td class="mono">${ts(g.created)}</td>
+    <td>${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditGroup(${g.id})">Edit</button>`:''}</td>
+  </tr>`).join(''):'<tr><td colspan="7" class="empty">No groups</td></tr>';
+}
+async function showCreateGroup(){
+  document.getElementById('newGroupName').value='';document.getElementById('newGroupDesc').value='';
+  document.getElementById('newGroupErr').textContent='';
+  await populateAclDropdown('newGroupAcl',0);
+  showModal('createGroupModal');
+}
+async function doCreateGroup(){
+  const d={name:document.getElementById('newGroupName').value,description:document.getElementById('newGroupDesc').value,acl_profile_id:parseInt(document.getElementById('newGroupAcl').value)||0};
+  if(!d.name){document.getElementById('newGroupErr').textContent='Name is required';return}
+  const r=await api('/wg/groups',{method:'POST',body:JSON.stringify(d)});
+  if(r.ok){closeModal('createGroupModal');loadGroups()}else{const e=await r.json();document.getElementById('newGroupErr').textContent=e.detail||'Failed'}
+}
+async function showEditGroup(id){
+  const grps=await api('/wg/groups').then(r=>r.json());
+  const g=grps.find(x=>x.id===id);if(!g)return;
+  document.getElementById('editGroupId').value=id;
+  document.getElementById('editGroupName').value=g.name;
+  document.getElementById('editGroupDesc').value=g.description||'';
+  await populateAclDropdown('editGroupAcl',g.acl_profile_id||0);
+  document.getElementById('editGroupErr').textContent='';showModal('editGroupModal');
+}
+async function doEditGroup(){
+  const id=document.getElementById('editGroupId').value;
+  const d={name:document.getElementById('editGroupName').value,description:document.getElementById('editGroupDesc').value,acl_profile_id:parseInt(document.getElementById('editGroupAcl').value)||0};
+  const r=await api(`/wg/groups/${id}`,{method:'PUT',body:JSON.stringify(d)});
+  if(r.ok){closeModal('editGroupModal');loadGroups()}else{const e=await r.json();document.getElementById('editGroupErr').textContent=e.detail||'Failed'}
+}
+async function doDeleteGroup(){
+  const id=document.getElementById('editGroupId').value;
+  if(!confirm('Delete this group? Peers will be unlinked but not deleted.'))return;
+  const r=await api(`/wg/groups/${id}`,{method:'DELETE'});
+  if(r.ok){closeModal('editGroupModal');loadGroups()}else{const e=await r.json();alert(e.detail||'Cannot delete')}
 }
 
 // ── ACL Profiles ──

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from ..auth import verify_wireguard
 from .. import db
-from . import manager, ipam, peers, status, acl
+from . import manager, ipam, peers, status, acl, groups
 
 router = APIRouter(prefix="/wg", tags=["WireGuard"])
 
@@ -37,6 +37,7 @@ class CreatePeerRequest(BaseModel):
     dns: str = ""
     persistent_keepalive: int = 25
     acl_profile_id: int = 0
+    group_id: int = 0
 
 
 class UpdatePeerRequest(BaseModel):
@@ -44,6 +45,19 @@ class UpdatePeerRequest(BaseModel):
     note: str | None = None
     dns: str | None = None
     persistent_keepalive: int | None = None
+    acl_profile_id: int | None = None
+    group_id: int | None = None
+
+
+class CreateGroupRequest(BaseModel):
+    name: str
+    description: str = ""
+    acl_profile_id: int = 0
+
+
+class UpdateGroupRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
     acl_profile_id: int | None = None
 
 
@@ -205,8 +219,9 @@ async def list_interface_peers(iface_id: int):
     live = status.get_live_status(iface["name"])
     live_map = {p["public_key"]: p for p in live.get("peers", [])}
 
-    # Build ACL profile name lookup
+    # Build lookup maps
     profiles = {p["id"]: p["name"] for p in acl.list_profiles()}
+    group_map = {g["id"]: g["name"] for g in groups.list_groups()}
 
     result = []
     for p in peer_list:
@@ -217,6 +232,7 @@ async def list_interface_peers(iface_id: int):
         d["transfer_rx"] = live_peer.get("transfer_rx", 0)
         d["transfer_tx"] = live_peer.get("transfer_tx", 0)
         d["acl_profile_name"] = profiles.get(p.get("acl_profile_id", 0), "Default")
+        d["group_name"] = group_map.get(p.get("group_id", 0), "")
         result.append(d)
     return result
 
@@ -231,6 +247,7 @@ async def create_peer(iface_id: int, req: CreatePeerRequest):
             dns=req.dns,
             persistent_keepalive=req.persistent_keepalive,
             acl_profile_id=req.acl_profile_id,
+            group_id=req.group_id,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -247,7 +264,7 @@ async def get_peer(peer_id: int):
 @router.put("/peers/{peer_id}", dependencies=[Depends(verify_wireguard)])
 async def update_peer(peer_id: int, req: UpdatePeerRequest):
     try:
-        return peers.update_peer(peer_id, req.name, req.note, req.dns, req.persistent_keepalive, req.acl_profile_id)
+        return peers.update_peer(peer_id, req.name, req.note, req.dns, req.persistent_keepalive, req.acl_profile_id, req.group_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -346,5 +363,46 @@ async def delete_acl_profile(profile_id: int):
     try:
         acl.delete_profile(profile_id)
         return {"deleted": profile_id}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# -- Groups --
+
+@router.get("/groups", dependencies=[Depends(verify_wireguard)])
+async def list_groups():
+    return groups.list_groups()
+
+
+@router.post("/groups", status_code=201, dependencies=[Depends(verify_wireguard)])
+async def create_group(req: CreateGroupRequest):
+    try:
+        return groups.create_group(req.name, req.description, req.acl_profile_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/groups/{group_id}", dependencies=[Depends(verify_wireguard)])
+async def update_group(group_id: int, req: UpdateGroupRequest):
+    try:
+        group = groups.update_group(group_id, req.name, req.description, req.acl_profile_id)
+        # Re-apply firewall rules since group ACL may have changed
+        if req.acl_profile_id is not None:
+            ifaces = db.fetchall("SELECT name FROM wg_interfaces")
+            for iface in ifaces:
+                try:
+                    acl.apply_firewall_rules(iface["name"])
+                except Exception:
+                    pass
+        return group
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/groups/{group_id}", dependencies=[Depends(verify_wireguard)])
+async def delete_group(group_id: int):
+    try:
+        groups.delete_group(group_id)
+        return {"deleted": group_id}
     except ValueError as e:
         raise HTTPException(400, str(e))

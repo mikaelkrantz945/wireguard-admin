@@ -23,6 +23,11 @@ class ProvisionRequest(BaseModel):
     custom_fields: dict = {}
 
 
+def _check_enabled():
+    if not settings.hostbill_enabled:
+        raise HTTPException(403, "HostBill integration is disabled. Set HOSTBILL_ENABLED=true to enable.")
+
+
 def _verify_secret(secret: str):
     if not settings.hostbill_webhook_secret:
         raise HTTPException(500, "Webhook secret not configured")
@@ -33,6 +38,7 @@ def _verify_secret(secret: str):
 @router.post("/provision")
 async def provision(req: ProvisionRequest):
     """Handle HostBill Script Provisioning actions."""
+    _check_enabled()
     _verify_secret(req.secret)
 
     action = req.action.lower()
@@ -188,4 +194,4 @@ def _change_package(req: ProvisionRequest) -> dict:
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "service": "hostbill-provisioning"}
+    return {"status": "ok", "enabled": settings.hostbill_enabled, "service": "hostbill-provisioning"}

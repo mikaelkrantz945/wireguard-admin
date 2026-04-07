@@ -53,7 +53,10 @@ async def portal_ui():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "services": ["wireguard", "hostbill"]}
+    services = ["wireguard"]
+    if settings.hostbill_enabled:
+        services.append("hostbill")
+    return {"status": "ok", "services": services}
 
 
 class BootstrapRequest(BaseModel):

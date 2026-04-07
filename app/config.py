@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     wg_default_port: int = 51820
 
     # HostBill webhook auth
+    hostbill_enabled: bool = False
     hostbill_webhook_secret: str = ""
 
     # Server

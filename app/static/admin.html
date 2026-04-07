@@ -134,7 +134,7 @@ tr:hover{background:#1c1f26}
     <button onclick="showTab('interfaces',this)">Interfaces</button>
     <button onclick="showTab('groups',this)">Groups</button>
     <button onclick="showTab('acl',this)">ACL Profiles</button>
-    <button onclick="showTab('keys',this)">API Keys</button>
+    <button onclick="showTab('keys',this)" id="navKeys" style="display:none">API Keys</button>
     <button onclick="showTab('logs',this)">Request Logs</button>
     <button onclick="showTab('users',this)" id="navUsers" style="display:none">Users</button>
     <button onclick="showTab('integrations',this)">Integrations</button>
@@ -542,11 +542,14 @@ async function doAcceptInvite(){
 }
 function doLogout(){api('/admin/auth/logout',{method:'POST'}).catch(()=>{});TOKEN='';USER=null;sessionStorage.removeItem('tk');sessionStorage.removeItem('usr');pg('pgLogin')}
 
-function showApp(){
+async function showApp(){
   pg('app');
   document.getElementById('userLabel').textContent=`${USER.firstname} ${USER.lastname} (${USER.role})`;
   document.getElementById('navUsers').style.display=USER.role==='admin'?'':'none';
   document.getElementById('btnNewKey').style.display=USER.role==='admin'?'':'none';
+  // Show API Keys tab only when HostBill is enabled
+  const h=await fetch('/health').then(r=>r.json()).catch(()=>({}));
+  document.getElementById('navKeys').style.display=(h.services||[]).includes('hostbill')?'':'none';
   loadDashboard();
 }
 

@@ -76,11 +76,14 @@ def verify_and_auth(peer_ip: str, code: str) -> dict:
     expires = (datetime.utcnow() + timedelta(hours=_session_hours())).isoformat()
     ip = peer["allowed_ips"].split("/")[0]
 
+    # Get current endpoint for reconnect detection
+    endpoint = _get_peer_endpoint(ip)
+
     # Remove old sessions for this peer
     db.execute("DELETE FROM vpn_auth_sessions WHERE peer_id = %s", (peer["id"],))
     db.execute(
-        "INSERT INTO vpn_auth_sessions (peer_id, peer_ip, expires, created) VALUES (%s,%s,%s,%s)",
-        (peer["id"], ip, expires, now),
+        "INSERT INTO vpn_auth_sessions (peer_id, peer_ip, expires, created, last_endpoint) VALUES (%s,%s,%s,%s,%s)",
+        (peer["id"], ip, expires, now, endpoint),
     )
 
     # Open iptables for this peer
@@ -216,8 +219,8 @@ def apply_2fa_rules(interface_name: str = "wg0"):
 
 
 def _ensure_captive_redirect(server_ip: str, api_port: str):
-    """Add iptables NAT rule to redirect port 80 on VPN IP to API port."""
-    # Check if rule exists
+    """Add iptables NAT redirect + INPUT allow for captive portal access."""
+    # NAT: redirect port 80 on VPN IP to API port
     check = subprocess.run(
         ["iptables", "-t", "nat", "-C", "PREROUTING", "-d", server_ip, "-p", "tcp",
          "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
@@ -229,6 +232,89 @@ def _ensure_captive_redirect(server_ip: str, api_port: str):
              "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
             capture_output=True,
         )
+
+    # INPUT: allow all VPN clients to reach the server itself (for captive portal, DNS, etc.)
+    check = subprocess.run(
+        ["iptables", "-C", "INPUT", "-i", "wg0", "-d", server_ip, "-j", "ACCEPT"],
+        capture_output=True,
+    )
+    if check.returncode != 0:
+        subprocess.run(
+            ["iptables", "-I", "INPUT", "1", "-i", "wg0", "-d", server_ip, "-j", "ACCEPT"],
+            capture_output=True,
+        )
+
+
+def _get_peer_endpoint(peer_ip: str) -> str:
+    """Get the current endpoint for a peer from wg show."""
+    try:
+        result = subprocess.run(["wg", "show", "wg0", "dump"], capture_output=True, text=True)
+        for line in result.stdout.strip().split("\n")[1:]:
+            fields = line.split("\t")
+            if len(fields) >= 4 and peer_ip in fields[3]:
+                return fields[2] if fields[2] != "(none)" else ""
+    except Exception:
+        pass
+    return ""
+
+
+def _get_peer_handshake(peer_ip: str) -> int:
+    """Get latest handshake epoch for a peer from wg show."""
+    try:
+        result = subprocess.run(["wg", "show", "wg0", "dump"], capture_output=True, text=True)
+        for line in result.stdout.strip().split("\n")[1:]:
+            fields = line.split("\t")
+            if len(fields) >= 5 and peer_ip in fields[3]:
+                return int(fields[4]) if fields[4] != "0" else 0
+    except Exception:
+        pass
+    return 0
+
+
+def _should_reauth(peer: dict) -> bool:
+    """Check if peer requires re-auth on reconnect."""
+    # Per-peer override (NULL = use global)
+    if peer.get("reauth_on_reconnect") is not None:
+        return bool(peer["reauth_on_reconnect"])
+    # Global setting
+    return get_setting("vpn_2fa_reauth_on_reconnect").lower() == "true"
+
+
+def check_reconnects():
+    """Detect peers that disconnected and reconnected — invalidate their 2FA sessions."""
+    import time
+    now_epoch = int(time.time())
+    sessions = db.fetchall("SELECT * FROM vpn_auth_sessions")
+
+    for session in sessions:
+        peer_ip = session["peer_ip"]
+        peer = db.fetchone("SELECT * FROM wg_peers WHERE allowed_ips = %s", (peer_ip + "/32",))
+        if not peer:
+            continue
+        if not _should_reauth(peer):
+            continue
+
+        # Check if endpoint changed (reconnect from different IP/port)
+        current_endpoint = _get_peer_endpoint(peer_ip)
+        stored_endpoint = session.get("last_endpoint", "")
+
+        if stored_endpoint and current_endpoint and current_endpoint != stored_endpoint:
+            print(f"[2fa] Reconnect detected for {peer_ip}: {stored_endpoint} -> {current_endpoint}")
+            db.execute("DELETE FROM vpn_auth_sessions WHERE id = %s", (session["id"],))
+            _block_peer(peer_ip)
+            continue
+
+        # Check if handshake is stale (>3 min = likely disconnected)
+        handshake = _get_peer_handshake(peer_ip)
+        if handshake > 0 and (now_epoch - handshake) > 180:
+            # Peer hasn't had a handshake in 3 min — likely disconnected
+            # Don't invalidate yet, but update endpoint when they come back
+            pass
+        elif handshake > 0 and stored_endpoint and not current_endpoint:
+            # Had endpoint before, now gone — disconnected
+            print(f"[2fa] Disconnect detected for {peer_ip}")
+            db.execute("DELETE FROM vpn_auth_sessions WHERE id = %s", (session["id"],))
+            _block_peer(peer_ip)
 
 
 def cleanup_expired_sessions():

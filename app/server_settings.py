@@ -35,6 +35,11 @@ SETTING_DEFS = {
         "default": "12",
         "description": "How long a VPN 2FA session lasts before re-authentication is required",
     },
+    "vpn_2fa_reauth_on_reconnect": {
+        "label": "Require 2FA re-auth on reconnect (global)",
+        "default": "false",
+        "description": "If true, 2FA sessions are invalidated when a peer disconnects and reconnects. Set to 'true' or 'false'",
+    },
     "portal_welcome_message": {
         "label": "Portal Welcome Message",
         "default": "",

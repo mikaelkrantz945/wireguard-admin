@@ -696,6 +696,12 @@ async function showEditPeer(id){
 async function doEditPeer(){
   const id=document.getElementById('editPeerId').value;
   const d={name:document.getElementById('editPeerName').value,note:document.getElementById('editPeerNote').value,dns:document.getElementById('editPeerDns').value,persistent_keepalive:parseInt(document.getElementById('editPeerKeepalive').value)||25,acl_profile_id:parseInt(document.getElementById('editPeerAcl').value)||0,group_id:parseInt(document.getElementById('editPeerGroup').value)||0,portal_email:document.getElementById('editPeerPortalEmail').value,portal_password:document.getElementById('editPeerPortalPass').value||undefined};
+  // Save reauth_on_reconnect if 2FA section is visible
+  const reauthEl=document.getElementById('editReauthReconnect');
+  if(reauthEl){
+    const v=reauthEl.value;
+    d.reauth_on_reconnect=v===''?null:v==='true';
+  }
   const r=await api(`/wg/peers/${id}`,{method:'PUT',body:JSON.stringify(d)});
   if(r.ok){closeModal('editPeerModal');loadPeers()}else{const e=await r.json();document.getElementById('editPeerErr').textContent=e.detail||'Failed'}
 }
@@ -819,8 +825,15 @@ async function disableTotp(){
 // ── VPN 2FA ──
 function render2faStatus(peer){
   const el=document.getElementById('editPeer2faStatus');
+  const reauth=peer.reauth_on_reconnect;
+  const reauthLabel=reauth===true?'Yes':reauth===false?'No':'Global default';
   if(peer.require_2fa){
-    el.innerHTML=`<span class="badge badge-enabled" style="margin-right:.5rem">2FA enabled</span><button class="btn btn-sm btn-danger" onclick="doDisableVpn2fa(${peer.id})">Disable 2FA</button>`;
+    el.innerHTML=`<span class="badge badge-enabled" style="margin-right:.5rem">2FA enabled</span><button class="btn btn-sm btn-danger" onclick="doDisableVpn2fa(${peer.id})">Disable 2FA</button>
+    <div style="margin-top:.5rem"><label style="font-size:.82rem;color:#8b949e">Re-auth on reconnect: <select id="editReauthReconnect" style="padding:.2rem .4rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.82rem">
+      <option value=""${reauth===null||reauth===undefined?' selected':''}>Global default</option>
+      <option value="true"${reauth===true?' selected':''}>Yes — always re-auth</option>
+      <option value="false"${reauth===false?' selected':''}>No — keep session</option>
+    </select></label></div>`;
   }else{
     el.innerHTML=`<button class="btn btn-sm btn-primary" onclick="setupVpn2fa(${peer.id},'${peer.name}')">Enable VPN 2FA</button>`;
   }

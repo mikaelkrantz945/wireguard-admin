@@ -268,13 +268,26 @@ def init_schema():
                 END $$
             """)
             cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE wg_peers ADD COLUMN reauth_on_reconnect BOOLEAN DEFAULT NULL;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS vpn_auth_sessions (
                     id SERIAL PRIMARY KEY,
                     peer_id INTEGER NOT NULL,
                     peer_ip TEXT NOT NULL,
                     expires TEXT NOT NULL,
-                    created TEXT NOT NULL
+                    created TEXT NOT NULL,
+                    last_endpoint TEXT DEFAULT ''
                 )
+            """)
+            cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE vpn_auth_sessions ADD COLUMN last_endpoint TEXT DEFAULT '';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_request_log_ts ON request_log(ts DESC)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)")

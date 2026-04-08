@@ -213,11 +213,15 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
                 capture_output=True,
             )
-            # DROP HTTPS — can't DNAT 443 due to TLS cert mismatch
-            # OS captive portal detection uses HTTP, so this is fine
-            # Drop everything else
+            # REJECT HTTPS immediately — TCP RST so phone falls back to HTTP fast
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-j", "DROP"],
+                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "443",
+                 "-j", "REJECT", "--reject-with", "tcp-reset"],
+                capture_output=True,
+            )
+            # REJECT everything else (fast fail, not timeout)
+            subprocess.run(
+                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-j", "REJECT", "--reject-with", "icmp-port-unreachable"],
                 capture_output=True,
             )
 

@@ -260,17 +260,18 @@ def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], in
         )
 
     # For each unauthenticated peer: redirect HTTP + HTTPS to captive portal
+    # EXCLUDE traffic already going to VPN server (captive portal API calls)
     for peer_ip in unauth_ips:
-        # Port 80 → API (captive portal)
         subprocess.run(
             ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
-             "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
+             "!", "-d", server_ip, "-p", "tcp", "--dport", "80",
+             "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
             capture_output=True,
         )
-        # Port 443 → nginx (has SSL cert) — browser gets cert warning but page loads
         subprocess.run(
             ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
-             "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", f"{server_ip}:443"],
+             "!", "-d", server_ip, "-p", "tcp", "--dport", "443",
+             "-j", "DNAT", "--to-destination", f"{server_ip}:443"],
             capture_output=True,
         )
 
@@ -349,9 +350,12 @@ def check_reconnects():
         reason = ""
 
         # Method 1: Endpoint changed
-        if stored_endpoint and current_endpoint and current_endpoint != stored_endpoint:
+        # Compare only the IP part (port changes are normal for mobile/NAT)
+        stored_ip = stored_endpoint.split(":")[0] if stored_endpoint else ""
+        current_ip = current_endpoint.split(":")[0] if current_endpoint else ""
+        if stored_ip and current_ip and stored_ip != current_ip:
             should_invalidate = True
-            reason = f"endpoint changed: {stored_endpoint} -> {current_endpoint}"
+            reason = f"endpoint IP changed: {stored_ip} -> {current_ip}"
 
         # Method 2: Handshake stale (>150s = disconnected)
         if handshake > 0 and (now_epoch - handshake) > 150:

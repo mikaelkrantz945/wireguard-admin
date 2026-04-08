@@ -93,6 +93,14 @@ def init_schema():
                 )
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS portal_sessions (
+                    token TEXT PRIMARY KEY,
+                    peer_id INTEGER NOT NULL,
+                    created TEXT NOT NULL,
+                    expires TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS api_keys (
                     id SERIAL PRIMARY KEY,
                     key_hash TEXT UNIQUE NOT NULL,

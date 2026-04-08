@@ -138,6 +138,7 @@ tr:hover{background:#1c1f26}
     <button onclick="showTab('logs',this)">Request Logs</button>
     <button onclick="showTab('users',this)" id="navUsers" style="display:none">Users</button>
     <button onclick="showTab('integrations',this)">Integrations</button>
+    <button onclick="showTab('settings',this)">Settings</button>
     <button onclick="showTab('security',this)">Security</button>
   </nav>
   <main>
@@ -218,6 +219,16 @@ tr:hover{background:#1c1f26}
         <button class="btn btn-primary" onclick="showAddIntegration()">+ Add Integration</button>
       </div>
       <table><thead><tr><th>ID</th><th>Provider</th><th>Name</th><th>Status</th><th>Last Sync</th><th></th></tr></thead><tbody id="integrationsTable"></tbody></table>
+    </div>
+
+    <!-- Settings -->
+    <div class="tab" id="tab-settings">
+      <h3 style="margin-bottom:1rem">Server Settings</h3>
+      <div id="settingsForm"></div>
+      <div style="margin-top:1rem">
+        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+        <span id="settingsSaved" class="ok" style="margin-left:.5rem"></span>
+      </div>
     </div>
 
     <div class="tab" id="tab-security">
@@ -509,7 +520,7 @@ function badge(t,c){return`<span class="badge badge-${c||t}">${t}</span>`}
 function ts(s){return s?s.replace('T',' ').slice(0,19):'-'}
 function fmtBytes(b){if(!b||b===0)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 function fmtHandshake(epoch){if(!epoch)return'-';const d=Math.floor(Date.now()/1000)-epoch;if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago'}
-function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,groups:loadGroups,acl:loadAclProfiles,keys:loadKeys,logs:loadLogs,users:loadUsers,integrations:loadIntegrations,security:loadSecurity})[n]?.()}
+function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,groups:loadGroups,acl:loadAclProfiles,keys:loadKeys,logs:loadLogs,users:loadUsers,integrations:loadIntegrations,settings:loadSettings,security:loadSecurity})[n]?.()}
 function showModal(id){document.getElementById(id).classList.add('show')}
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 
@@ -967,6 +978,29 @@ async function doDeleteAcl(){
   if(!confirm('Delete this ACL profile?'))return;
   const r=await api(`/wg/acl-profiles/${id}`,{method:'DELETE'});
   if(r.ok){closeModal('editAclModal');loadAclProfiles()}else{const e=await r.json();alert(e.detail||'Cannot delete')}
+}
+
+// ── Settings ──
+let _settingsData=[];
+async function loadSettings(){
+  _settingsData=await api('/admin/settings').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  document.getElementById('settingsSaved').textContent='';
+  document.getElementById('settingsForm').innerHTML=_settingsData.map(s=>`<div style="margin-bottom:1rem">
+    <label style="font-size:.85rem;color:#8b949e">${s.label}</label>
+    <input type="text" id="setting_${s.key}" value="${s.value||''}" placeholder="${s.default}" style="width:100%;padding:.5rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.9rem">
+    <p style="color:#6e7681;font-size:.78rem;margin-top:.2rem">${s.description}</p>
+  </div>`).join('');
+}
+async function saveSettings(){
+  document.getElementById('settingsSaved').textContent='Saving...';
+  for(const s of _settingsData){
+    const val=document.getElementById('setting_'+s.key).value;
+    if(val!==s.value){
+      await api(`/admin/settings/${s.key}`,{method:'PUT',body:JSON.stringify({value:val})});
+    }
+  }
+  document.getElementById('settingsSaved').textContent='Settings saved!';
+  setTimeout(()=>{document.getElementById('settingsSaved').textContent=''},3000);
 }
 
 // ── Integrations ──

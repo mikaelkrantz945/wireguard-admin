@@ -195,6 +195,12 @@ def init_schema():
                 )
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL DEFAULT ''
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS integrations (
                     id SERIAL PRIMARY KEY,
                     provider TEXT NOT NULL,

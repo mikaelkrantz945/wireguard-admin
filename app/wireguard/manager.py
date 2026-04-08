@@ -52,7 +52,8 @@ def write_server_config(interface: dict, peers: list[dict]):
 
 def generate_client_config(interface: dict, peer: dict, acl_allowed_ips: str = "") -> str:
     """Generate a client config string for download."""
-    dns = peer.get("dns") or interface.get("dns") or settings.wg_default_dns
+    from ..server_settings import get as get_setting
+    dns = peer.get("dns") or interface.get("dns") or get_setting("dns_servers")
     client_allowed_ips = acl_allowed_ips or "0.0.0.0/0, ::/0"
     lines = ["[Interface]"]
     lines.append(f"PrivateKey = {peer['private_key']}")

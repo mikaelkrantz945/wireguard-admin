@@ -33,11 +33,13 @@ ansible-playbook -i inventory.yml deploy.yml  # Quick redeploy
 ansible-playbook -i inventory.yml certbot.yml # SSL certificate
 ```
 
-## Contributing
+## Deployment rules — MANDATORY
 
-- All changes via pull requests (main branch is protected)
-- Never commit .env, inventory.yml, secrets, or production configs
-- Copy *.example files and edit locally
+1. **Every change MUST go through a pull request.** Never push directly to main.
+2. **Create PR first, then deploy.** No deploy without a merged PR.
+3. **Deploy command:** `cd ansible && ansible-playbook -i inventory.yml deploy.yml`
+4. **Never commit** .env, inventory.yml, secrets, or production configs.
+5. Copy *.example files and edit locally.
 
 ## Stack
 

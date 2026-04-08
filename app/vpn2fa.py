@@ -281,10 +281,16 @@ def _should_reauth(peer: dict) -> bool:
 
 
 def check_reconnects():
-    """Detect peers that disconnected and reconnected — invalidate their 2FA sessions."""
+    """Detect peers that disconnected and reconnected — invalidate their 2FA sessions.
+
+    Detection methods:
+    1. Endpoint changed (reconnect from different IP:port)
+    2. Handshake stale >150s (WireGuard sends keepalive every 25s, so 150s = definitely gone)
+    """
     import time
     now_epoch = int(time.time())
     sessions = db.fetchall("SELECT * FROM vpn_auth_sessions")
+    invalidated = False
 
     for session in sessions:
         peer_ip = session["peer_ip"]
@@ -294,27 +300,41 @@ def check_reconnects():
         if not _should_reauth(peer):
             continue
 
-        # Check if endpoint changed (reconnect from different IP/port)
         current_endpoint = _get_peer_endpoint(peer_ip)
         stored_endpoint = session.get("last_endpoint", "")
-
-        if stored_endpoint and current_endpoint and current_endpoint != stored_endpoint:
-            print(f"[2fa] Reconnect detected for {peer_ip}: {stored_endpoint} -> {current_endpoint}")
-            db.execute("DELETE FROM vpn_auth_sessions WHERE id = %s", (session["id"],))
-            _block_peer(peer_ip)
-            continue
-
-        # Check if handshake is stale (>3 min = likely disconnected)
         handshake = _get_peer_handshake(peer_ip)
-        if handshake > 0 and (now_epoch - handshake) > 180:
-            # Peer hasn't had a handshake in 3 min — likely disconnected
-            # Don't invalidate yet, but update endpoint when they come back
-            pass
-        elif handshake > 0 and stored_endpoint and not current_endpoint:
-            # Had endpoint before, now gone — disconnected
-            print(f"[2fa] Disconnect detected for {peer_ip}")
+
+        should_invalidate = False
+        reason = ""
+
+        # Method 1: Endpoint changed
+        if stored_endpoint and current_endpoint and current_endpoint != stored_endpoint:
+            should_invalidate = True
+            reason = f"endpoint changed: {stored_endpoint} -> {current_endpoint}"
+
+        # Method 2: Handshake stale (>150s = disconnected)
+        if handshake > 0 and (now_epoch - handshake) > 150:
+            should_invalidate = True
+            reason = f"handshake stale: {now_epoch - handshake}s ago"
+
+        # Method 3: No handshake at all (peer never connected or gone)
+        if handshake == 0:
+            should_invalidate = True
+            reason = "no handshake"
+
+        if should_invalidate:
+            print(f"[2fa] Session invalidated for {peer_ip}: {reason}")
             db.execute("DELETE FROM vpn_auth_sessions WHERE id = %s", (session["id"],))
-            _block_peer(peer_ip)
+            invalidated = True
+
+        # Update stored endpoint if it was empty
+        elif current_endpoint and not stored_endpoint:
+            db.execute(
+                "UPDATE vpn_auth_sessions SET last_endpoint = %s WHERE id = %s",
+                (current_endpoint, session["id"]),
+            )
+
+    return invalidated
 
 
 def cleanup_expired_sessions():

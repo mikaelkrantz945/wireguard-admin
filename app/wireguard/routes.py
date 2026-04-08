@@ -51,6 +51,7 @@ class UpdatePeerRequest(BaseModel):
     group_id: int | None = None
     portal_email: str | None = None
     portal_password: str | None = None
+    reauth_on_reconnect: bool | None = None
 
 
 class CreateGroupRequest(BaseModel):
@@ -292,6 +293,8 @@ async def update_peer(peer_id: int, req: UpdatePeerRequest):
             if updates:
                 params.append(peer_id)
                 db.execute(f"UPDATE wg_peers SET {', '.join(updates)} WHERE id = %s", tuple(params))
+        if req.reauth_on_reconnect is not None:
+            db.execute("UPDATE wg_peers SET reauth_on_reconnect = %s WHERE id = %s", (req.reauth_on_reconnect, peer_id))
         return result
     except ValueError as e:
         raise HTTPException(400, str(e))

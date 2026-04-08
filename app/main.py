@@ -28,6 +28,8 @@ async def startup():
     db.init_schema()
     from .wireguard.acl import seed_default
     seed_default()
+    from .server_settings import seed_defaults
+    seed_defaults()
 
 
 app.add_middleware(RequestLogMiddleware)

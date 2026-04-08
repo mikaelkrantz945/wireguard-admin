@@ -266,3 +266,20 @@ async def get_logs(limit: int = 100, offset: int = 0, customer: str = None, path
 @router.get("/stats", dependencies=[Depends(_require_user)])
 async def get_stats():
     return logger.get_stats()
+
+
+# -- Server settings --
+
+@router.get("/settings", dependencies=[Depends(_require_admin)])
+async def get_settings():
+    from . import server_settings
+    return server_settings.get_all()
+
+
+@router.put("/settings/{key}", dependencies=[Depends(_require_admin)])
+async def update_setting(key: str, req: dict):
+    from . import server_settings
+    try:
+        return server_settings.update(key, req.get("value", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))

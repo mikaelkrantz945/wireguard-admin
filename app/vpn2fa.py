@@ -216,8 +216,8 @@ def apply_2fa_rules(interface_name: str = "wg0"):
 
 
 def _ensure_captive_redirect(server_ip: str, api_port: str):
-    """Add iptables NAT rule to redirect port 80 on VPN IP to API port."""
-    # Check if rule exists
+    """Add iptables NAT redirect + INPUT allow for captive portal access."""
+    # NAT: redirect port 80 on VPN IP to API port
     check = subprocess.run(
         ["iptables", "-t", "nat", "-C", "PREROUTING", "-d", server_ip, "-p", "tcp",
          "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
@@ -227,6 +227,17 @@ def _ensure_captive_redirect(server_ip: str, api_port: str):
         subprocess.run(
             ["iptables", "-t", "nat", "-A", "PREROUTING", "-d", server_ip, "-p", "tcp",
              "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
+            capture_output=True,
+        )
+
+    # INPUT: allow all VPN clients to reach the server itself (for captive portal, DNS, etc.)
+    check = subprocess.run(
+        ["iptables", "-C", "INPUT", "-i", "wg0", "-d", server_ip, "-j", "ACCEPT"],
+        capture_output=True,
+    )
+    if check.returncode != 0:
+        subprocess.run(
+            ["iptables", "-I", "INPUT", "1", "-i", "wg0", "-d", server_ip, "-j", "ACCEPT"],
             capture_output=True,
         )
 

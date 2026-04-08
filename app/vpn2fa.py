@@ -11,8 +11,12 @@ import base64
 from . import db
 from .server_settings import get as get_setting
 
-# Default session duration: 12 hours
-SESSION_HOURS = 12
+
+def _session_hours() -> int:
+    try:
+        return int(get_setting("vpn_2fa_session_hours"))
+    except (ValueError, TypeError):
+        return 12
 
 
 def setup_totp(peer_id: int) -> dict:
@@ -69,7 +73,7 @@ def verify_and_auth(peer_ip: str, code: str) -> dict:
 
     # Create session
     now = datetime.utcnow().isoformat()
-    expires = (datetime.utcnow() + timedelta(hours=SESSION_HOURS)).isoformat()
+    expires = (datetime.utcnow() + timedelta(hours=_session_hours())).isoformat()
     ip = peer["allowed_ips"].split("/")[0]
 
     # Remove old sessions for this peer
@@ -86,7 +90,7 @@ def verify_and_auth(peer_ip: str, code: str) -> dict:
         "authenticated": True,
         "peer_name": peer["name"],
         "expires": expires,
-        "session_hours": SESSION_HOURS,
+        "session_hours": _session_hours(),
     }
 
 

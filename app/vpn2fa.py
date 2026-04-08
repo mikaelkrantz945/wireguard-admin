@@ -208,15 +208,13 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "udp", "--dport", "53", "-j", "ACCEPT"],
                 capture_output=True,
             )
-            # Allow HTTP/HTTPS outbound (will be NAT-redirected to captive portal)
+            # Allow HTTP outbound (will be NAT-redirected to captive portal)
             subprocess.run(
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
                 capture_output=True,
             )
-            subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "443", "-j", "ACCEPT"],
-                capture_output=True,
-            )
+            # DROP HTTPS — can't DNAT 443 due to TLS cert mismatch
+            # OS captive portal detection uses HTTP, so this is fine
             # Drop everything else
             subprocess.run(
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-j", "DROP"],
@@ -252,12 +250,8 @@ def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], in
              "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
             capture_output=True,
         )
-        # Port 443 → redirect to port 80 on server (browser will downgrade)
-        subprocess.run(
-            ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
-             "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
-            capture_output=True,
-        )
+        # Port 443 is NOT redirected — TLS handshake would fail with cert mismatch
+        # OS captive portal detection uses HTTP, so 443 just times out/drops
 
     # INPUT: allow VPN clients to reach the server
     check = subprocess.run(

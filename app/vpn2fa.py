@@ -86,16 +86,21 @@ def verify_and_auth(peer_ip: str, code: str) -> dict:
         (peer["id"], ip, expires, now, endpoint),
     )
 
-    # Open iptables for this peer
+    # Open iptables for this peer (add ACCEPT, don't flush chain)
     _open_peer(ip)
 
-    # Immediately rebuild NAT rules (remove DNAT for this peer)
-    ifaces = db.fetchall("SELECT name FROM wg_interfaces")
-    for iface in ifaces:
-        apply_2fa_rules(iface["name"])
-
-    # Flush conntrack for this peer so old NAT'd connections don't persist
-    subprocess.run(["conntrack", "-D", "-s", ip], capture_output=True)
+    # Schedule NAT rebuild + conntrack flush in background (after response is sent)
+    import threading
+    def _post_auth_cleanup():
+        import time
+        time.sleep(2)  # Wait for response to be sent
+        # Rebuild NAT rules (removes DNAT for this now-authenticated peer)
+        ifaces = db.fetchall("SELECT name FROM wg_interfaces")
+        for iface in ifaces:
+            apply_2fa_rules(iface["name"])
+        # Flush conntrack so old NAT'd connections don't persist
+        subprocess.run(["conntrack", "-D", "-s", ip], capture_output=True)
+    threading.Thread(target=_post_auth_cleanup, daemon=True).start()
 
     return {
         "authenticated": True,

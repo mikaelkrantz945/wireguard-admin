@@ -76,8 +76,8 @@ def _create_session(peer_id: int) -> str:
     now = datetime.utcnow().isoformat()
     expires = (datetime.utcnow() + timedelta(hours=24)).isoformat()
     db.execute(
-        "INSERT INTO sessions (token, user_id, created, expires) VALUES (%s,%s,%s,%s)",
-        (_hash(token), -peer_id, now, expires),
+        "INSERT INTO portal_sessions (token, peer_id, created, expires) VALUES (%s,%s,%s,%s)",
+        (_hash(token), peer_id, now, expires),
     )
     return token
 
@@ -87,13 +87,12 @@ def _verify_portal_session(token: str) -> dict | None:
         return None
     now = datetime.utcnow().isoformat()
     row = db.fetchone(
-        "SELECT user_id FROM sessions WHERE token = %s AND expires > %s",
+        "SELECT peer_id FROM portal_sessions WHERE token = %s AND expires > %s",
         (_hash(token), now),
     )
-    if not row or row["user_id"] >= 0:
+    if not row:
         return None
-    peer_id = -row["user_id"]
-    peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (peer_id,))
+    peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (row["peer_id"],))
     return dict(peer) if peer else None
 
 
@@ -264,7 +263,7 @@ async def portal_google_login(req: GoogleLoginRequest):
 @router.post("/auth/logout")
 async def portal_logout(token: str = Security(_token_header)):
     if token:
-        db.execute("DELETE FROM sessions WHERE token = %s", (_hash(token),))
+        db.execute("DELETE FROM portal_sessions WHERE token = %s", (_hash(token),))
     return {"ok": True}
 
 

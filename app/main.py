@@ -101,6 +101,28 @@ async def bootstrap(req: BootstrapRequest):
     return {"created": req.email, "role": "admin"}
 
 
+# Catch-all: redirect unauthenticated VPN clients to captive portal
+from fastapi.responses import RedirectResponse
+
+@app.middleware("http")
+async def captive_portal_redirect(request, call_next):
+    """If a 2FA-required VPN client hits any page without a session, redirect to captive portal."""
+    response = await call_next(request)
+    # Only intercept 404s from VPN clients (not admin/portal/api)
+    path = request.url.path
+    if response.status_code == 404:
+        client_ip = request.client.host if request.client else ""
+        # Check if this IP belongs to a 2FA-required peer without active session
+        if client_ip and not client_ip.startswith("127."):
+            from . import vpn2fa
+            peer = vpn2fa.get_peer_by_ip(client_ip)
+            if peer and peer.get("require_2fa"):
+                session = vpn2fa.check_session(client_ip)
+                if not session.get("authenticated"):
+                    return RedirectResponse(url="/vpn-auth/captive")
+    return response
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=settings.api_port)

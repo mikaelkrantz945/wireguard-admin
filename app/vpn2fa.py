@@ -186,6 +186,7 @@ def apply_2fa_rules(interface_name: str = "wg0"):
     iface = db.fetchone("SELECT address FROM wg_interfaces WHERE name = %s", (interface_name,))
     server_ip = iface["address"].split("/")[0] if iface else "172.19.1.1"
 
+    unauth_ips = []
     for peer in peers_2fa:
         peer_ip = peer["allowed_ips"].split("/")[0]
 
@@ -196,15 +197,24 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 capture_output=True,
             )
         else:
-            # Not authenticated — only allow access to VPN server (portal + DNS)
-            # Allow traffic to VPN server IP (for 2FA portal on any port)
+            unauth_ips.append(peer_ip)
+            # Allow traffic to VPN server IP (for captive portal)
             subprocess.run(
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-d", server_ip, "-j", "ACCEPT"],
                 capture_output=True,
             )
-            # Allow DNS to resolve captive portal (UDP 53)
+            # Allow DNS (so browser can resolve, then gets redirected)
             subprocess.run(
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "udp", "--dport", "53", "-j", "ACCEPT"],
+                capture_output=True,
+            )
+            # Allow HTTP/HTTPS outbound (will be NAT-redirected to captive portal)
+            subprocess.run(
+                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
+                capture_output=True,
+            )
+            subprocess.run(
+                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "443", "-j", "ACCEPT"],
                 capture_output=True,
             )
             # Drop everything else
@@ -213,34 +223,50 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 capture_output=True,
             )
 
-    # Ensure NAT redirect: port 80 on VPN server → API port (for captive portal)
-    api_port = get_setting("default_port") if False else "8092"  # hardcoded for now
-    _ensure_captive_redirect(server_ip, api_port)
+    # NAT: redirect HTTP from unauthenticated peers to captive portal
+    api_port = "8092"
+    _ensure_captive_nat(server_ip, api_port, unauth_ips, interface_name)
 
 
-def _ensure_captive_redirect(server_ip: str, api_port: str):
-    """Add iptables NAT redirect + INPUT allow for captive portal access."""
-    # NAT: redirect port 80 on VPN IP to API port
+def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], interface_name: str):
+    """NAT redirect all HTTP from unauthenticated peers to captive portal."""
+    # Ensure WG_2FA_NAT chain exists in nat table
+    subprocess.run(["iptables", "-t", "nat", "-N", "WG_2FA_NAT"], capture_output=True)
+    subprocess.run(["iptables", "-t", "nat", "-F", "WG_2FA_NAT"], capture_output=True)
+
+    # Ensure jump from PREROUTING
     check = subprocess.run(
-        ["iptables", "-t", "nat", "-C", "PREROUTING", "-d", server_ip, "-p", "tcp",
-         "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
+        ["iptables", "-t", "nat", "-C", "PREROUTING", "-i", interface_name, "-j", "WG_2FA_NAT"],
         capture_output=True,
     )
     if check.returncode != 0:
         subprocess.run(
-            ["iptables", "-t", "nat", "-A", "PREROUTING", "-d", server_ip, "-p", "tcp",
-             "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
+            ["iptables", "-t", "nat", "-I", "PREROUTING", "1", "-i", interface_name, "-j", "WG_2FA_NAT"],
             capture_output=True,
         )
 
-    # INPUT: allow all VPN clients to reach the server itself (for captive portal, DNS, etc.)
+    # For each unauthenticated peer: redirect port 80 to captive portal
+    for peer_ip in unauth_ips:
+        subprocess.run(
+            ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
+             "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
+            capture_output=True,
+        )
+        # Port 443 → redirect to port 80 on server (browser will downgrade)
+        subprocess.run(
+            ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
+             "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
+            capture_output=True,
+        )
+
+    # INPUT: allow VPN clients to reach the server
     check = subprocess.run(
-        ["iptables", "-C", "INPUT", "-i", "wg0", "-d", server_ip, "-j", "ACCEPT"],
+        ["iptables", "-C", "INPUT", "-i", interface_name, "-d", server_ip, "-j", "ACCEPT"],
         capture_output=True,
     )
     if check.returncode != 0:
         subprocess.run(
-            ["iptables", "-I", "INPUT", "1", "-i", "wg0", "-d", server_ip, "-j", "ACCEPT"],
+            ["iptables", "-I", "INPUT", "1", "-i", interface_name, "-d", server_ip, "-j", "ACCEPT"],
             capture_output=True,
         )
 

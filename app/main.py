@@ -102,26 +102,42 @@ async def bootstrap(req: BootstrapRequest):
     return {"created": req.email, "role": "admin"}
 
 
-# Catch-all: redirect unauthenticated VPN clients to captive portal
-from fastapi.responses import RedirectResponse
+# Captive portal: redirect unauthenticated VPN clients
+from fastapi.responses import RedirectResponse, PlainTextResponse, HTMLResponse
 
 @app.middleware("http")
 async def captive_portal_redirect(request, call_next):
-    """If a 2FA-required VPN client hits any page without a session, redirect to captive portal."""
-    response = await call_next(request)
-    # Only intercept 404s from VPN clients (not admin/portal/api)
+    """Intercept all requests from unauthenticated 2FA VPN clients → captive portal."""
     path = request.url.path
-    if response.status_code == 404:
-        client_ip = request.client.host if request.client else ""
-        # Check if this IP belongs to a 2FA-required peer without active session
-        if client_ip and not client_ip.startswith("127."):
-            from . import vpn2fa
-            peer = vpn2fa.get_peer_by_ip(client_ip)
-            if peer and peer.get("require_2fa"):
-                session = vpn2fa.check_session(client_ip)
-                if not session.get("authenticated"):
-                    return RedirectResponse(url="/vpn-auth/captive")
-    return response
+    client_ip = request.client.host if request.client else ""
+
+    # Skip internal paths (API, admin, portal, captive portal itself)
+    if path.startswith(("/admin", "/portal", "/vpn-auth", "/wg", "/hostbill",
+                        "/integrations", "/health", "/docs", "/openapi")):
+        return await call_next(request)
+
+    # Check if client is a VPN peer requiring 2FA
+    if client_ip and not client_ip.startswith("127."):
+        from . import vpn2fa
+        peer = vpn2fa.get_peer_by_ip(client_ip)
+        if peer and peer.get("require_2fa"):
+            session = vpn2fa.check_session(client_ip)
+            if not session.get("authenticated"):
+                # OS captive portal detection endpoints
+                # Apple
+                if "captive.apple.com" in request.headers.get("host", "") or path == "/hotspot-detect.html":
+                    return HTMLResponse('<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>',
+                                       status_code=302, headers={"Location": f"http://{request.headers.get('host', '')}/vpn-auth/captive"})
+                # Android
+                if path == "/generate_204" or "connectivitycheck" in request.headers.get("host", ""):
+                    return RedirectResponse(url="/vpn-auth/captive", status_code=302)
+                # Windows
+                if path == "/connecttest.txt" or "msftconnecttest" in request.headers.get("host", ""):
+                    return RedirectResponse(url="/vpn-auth/captive", status_code=302)
+                # Any other HTTP request → redirect to captive portal
+                return RedirectResponse(url="/vpn-auth/captive", status_code=302)
+
+    return await call_next(request)
 
 
 if __name__ == "__main__":

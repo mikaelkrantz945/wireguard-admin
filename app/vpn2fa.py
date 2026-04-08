@@ -194,9 +194,14 @@ def apply_2fa_rules(interface_name: str = "wg0"):
             )
         else:
             # Not authenticated — only allow access to VPN server (portal + DNS)
-            # Allow traffic to VPN server IP (for 2FA portal)
+            # Allow traffic to VPN server IP (for 2FA portal on any port)
             subprocess.run(
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-d", server_ip, "-j", "ACCEPT"],
+                capture_output=True,
+            )
+            # Allow DNS to resolve captive portal (UDP 53)
+            subprocess.run(
+                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "udp", "--dport", "53", "-j", "ACCEPT"],
                 capture_output=True,
             )
             # Drop everything else
@@ -204,6 +209,26 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-j", "DROP"],
                 capture_output=True,
             )
+
+    # Ensure NAT redirect: port 80 on VPN server → API port (for captive portal)
+    api_port = get_setting("default_port") if False else "8092"  # hardcoded for now
+    _ensure_captive_redirect(server_ip, api_port)
+
+
+def _ensure_captive_redirect(server_ip: str, api_port: str):
+    """Add iptables NAT rule to redirect port 80 on VPN IP to API port."""
+    # Check if rule exists
+    check = subprocess.run(
+        ["iptables", "-t", "nat", "-C", "PREROUTING", "-d", server_ip, "-p", "tcp",
+         "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
+        capture_output=True,
+    )
+    if check.returncode != 0:
+        subprocess.run(
+            ["iptables", "-t", "nat", "-A", "PREROUTING", "-d", server_ip, "-p", "tcp",
+             "--dport", "80", "-j", "REDIRECT", "--to-port", api_port],
+            capture_output=True,
+        )
 
 
 def cleanup_expired_sessions():

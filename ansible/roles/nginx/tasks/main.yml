@@ -30,6 +30,22 @@
     state: link
   notify: Reload nginx
 
+- name: Deploy captive portal catch-all (after SSL cert exists)
+  template:
+    src: captive-portal.conf.j2
+    dest: /etc/nginx/sites-available/captive-portal
+    mode: "0644"
+  when: ssl_cert.stat.exists
+  notify: Reload nginx
+
+- name: Enable captive portal catch-all
+  file:
+    src: /etc/nginx/sites-available/captive-portal
+    dest: /etc/nginx/sites-enabled/captive-portal
+    state: link
+  when: ssl_cert.stat.exists
+  notify: Reload nginx
+
 - name: Test nginx config
   command: nginx -t
   changed_when: false

@@ -213,10 +213,9 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
                 capture_output=True,
             )
-            # REJECT HTTPS immediately — TCP RST so phone falls back to HTTP fast
+            # Allow HTTPS outbound (will be NAT-redirected to nginx with SSL)
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "443",
-                 "-j", "REJECT", "--reject-with", "tcp-reset"],
+                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "443", "-j", "ACCEPT"],
                 capture_output=True,
             )
             # REJECT everything else (fast fail, not timeout)
@@ -247,15 +246,20 @@ def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], in
             capture_output=True,
         )
 
-    # For each unauthenticated peer: redirect port 80 to captive portal
+    # For each unauthenticated peer: redirect HTTP + HTTPS to captive portal
     for peer_ip in unauth_ips:
+        # Port 80 → API (captive portal)
         subprocess.run(
             ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
              "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
             capture_output=True,
         )
-        # Port 443 is NOT redirected — TLS handshake would fail with cert mismatch
-        # OS captive portal detection uses HTTP, so 443 just times out/drops
+        # Port 443 → nginx (has SSL cert) — browser gets cert warning but page loads
+        subprocess.run(
+            ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
+             "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", f"{server_ip}:443"],
+            capture_output=True,
+        )
 
     # INPUT: allow VPN clients to reach the server
     check = subprocess.run(

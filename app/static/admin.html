@@ -932,7 +932,7 @@ async function loadAclProfiles(){
     <td style="font-size:.78rem">${fmtFwRules(p.fw_rules)}</td>
     <td>${p.peer_count||0}</td>
     <td>${p.is_default?badge('default','active'):'-'}</td>
-    <td>${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditAcl(${p.id})">Edit</button>`:''}</td>
+    <td>${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditAcl(${p.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="quickDeleteAcl(${p.id})">Delete</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="8" class="empty">No profiles</td></tr>';
 }
 async function doCreateAcl(){
@@ -956,6 +956,11 @@ async function doEditAcl(){
   const d={name:document.getElementById('editAclName').value,description:document.getElementById('editAclDesc').value,allowed_ips:document.getElementById('editAclAllowedIps').value,fw_rules:serializeFwRules('editAclRules')};
   const r=await api(`/wg/acl-profiles/${id}`,{method:'PUT',body:JSON.stringify(d)});
   if(r.ok){closeModal('editAclModal');loadAclProfiles()}else{const e=await r.json();document.getElementById('editAclErr').textContent=e.detail||'Failed'}
+}
+async function quickDeleteAcl(id){
+  if(!confirm('Delete this ACL profile?'))return;
+  const r=await api(`/wg/acl-profiles/${id}`,{method:'DELETE'});
+  if(r.ok){loadAclProfiles()}else{const e=await r.json();alert(e.detail||'Cannot delete')}
 }
 async function doDeleteAcl(){
   const id=document.getElementById('editAclId').value;

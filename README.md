@@ -858,6 +858,115 @@ Response:
 }
 ```
 
+## Client Installation Guide
+
+### macOS (MacBook)
+
+**Option A: App Store (recommended)**
+
+1. Install **WireGuard** from the [Mac App Store](https://apps.apple.com/app/wireguard/id1451685025)
+2. Open WireGuard → click **+** → **Add Empty Tunnel** or **Import tunnel(s) from file**
+3. Paste your config or import the `.conf` file downloaded from the portal
+
+**Option B: Homebrew**
+
+```bash
+brew install wireguard-tools
+
+# Save your config
+nano /usr/local/etc/wireguard/wg0.conf   # Paste config from portal
+
+# Connect
+sudo wg-quick up wg0
+
+# Disconnect
+sudo wg-quick down wg0
+
+# Check status
+sudo wg show
+```
+
+**Option C: QR code**
+
+1. Install the WireGuard app on your iPhone/iPad
+2. Open WireGuard → **+** → **Create from QR code**
+3. Scan the QR code from the portal or admin GUI
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# Install
+sudo apt update && sudo apt install -y wireguard
+
+# Save config (paste from portal)
+sudo nano /etc/wireguard/wg0.conf
+
+# Connect
+sudo wg-quick up wg0
+
+# Disconnect
+sudo wg-quick down wg0
+
+# Auto-start on boot
+sudo systemctl enable wg-quick@wg0
+
+# Check status
+sudo wg show
+```
+
+### Linux (Fedora/RHEL/CentOS)
+
+```bash
+# Install
+sudo dnf install -y wireguard-tools
+
+# Save config
+sudo nano /etc/wireguard/wg0.conf
+
+# Connect / disconnect
+sudo wg-quick up wg0
+sudo wg-quick down wg0
+
+# Auto-start
+sudo systemctl enable wg-quick@wg0
+```
+
+### Linux (Arch)
+
+```bash
+sudo pacman -S wireguard-tools
+sudo nano /etc/wireguard/wg0.conf
+sudo wg-quick up wg0
+```
+
+### Windows
+
+1. Download WireGuard from [wireguard.com/install](https://www.wireguard.com/install/)
+2. Open WireGuard → **Add Tunnel** → **Import tunnel(s) from file**
+3. Import the `.conf` file downloaded from the portal
+4. Click **Activate**
+
+### Android / iOS
+
+1. Install **WireGuard** from [Google Play](https://play.google.com/store/apps/details?id=com.wireguard.android) or [App Store](https://apps.apple.com/app/wireguard/id1441195209)
+2. Open WireGuard → **+** → **Scan from QR code**
+3. Scan the QR code from the portal — done
+
+### Verify connection
+
+After connecting, verify your VPN is working:
+
+```bash
+# Check WireGuard status
+sudo wg show
+
+# Verify your IP changed (should show VPN server IP)
+curl ifconfig.me
+
+# Test DNS resolution
+nslookup example.com
+```
+
 ## Contributing
 
 1. Fork the repo and create a feature branch (`git checkout -b feature/my-change`)

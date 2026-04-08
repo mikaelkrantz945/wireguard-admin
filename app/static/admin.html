@@ -727,7 +727,7 @@ async function loadLogs(){
 // ── Users ──
 async function loadUsers(){
   const u=await api('/admin/users').then(r=>r.json()).catch(()=>[]);
-  document.getElementById('usersTable').innerHTML=u.length?u.map(x=>`<tr><td>${x.id}</td><td>${x.firstname} ${x.lastname}</td><td>${x.email}</td><td>${badge(x.role,x.role)}</td><td>${x.active?badge('active','active'):badge('pending','pending')}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.accepted)}</td><td>${USER.role==='admin'?`<button class="btn btn-danger btn-sm" onclick="deleteUser(${x.id})">Delete</button>`:''}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">No users</td></tr>';
+  document.getElementById('usersTable').innerHTML=u.length?u.map(x=>`<tr><td>${x.id}</td><td>${x.firstname} ${x.lastname}</td><td>${x.email}</td><td>${badge(x.role,x.role)}</td><td>${x.active?badge('active','active'):badge('pending','pending')}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.accepted)}</td><td>${USER.role==='admin'?`<button class="btn btn-danger btn-sm" onclick="deleteUser('${x.id}')">Delete</button>`:''}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">No users</td></tr>';
 }
 async function showInviteModal(){
   document.getElementById('invFirstname').value='';document.getElementById('invLastname').value='';
@@ -755,7 +755,7 @@ async function sendInvite(){
   }
   else{const e=await r.json();document.getElementById('inviteResult').innerHTML=`<p class="err">${e.detail||'Failed'}</p>`}
 }
-async function deleteUser(id){if(confirm('Delete user?')){await api(`/admin/users/${id}`,{method:'DELETE'});loadUsers()}}
+async function deleteUser(id){if(confirm('Delete user?')){await api(`/admin/users/${encodeURIComponent(id)}`,{method:'DELETE'});loadUsers()}}
 
 // ── Security ──
 async function loadSecurity(){

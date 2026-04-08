@@ -132,7 +132,25 @@ class UpdateUserRequest(BaseModel):
 
 @router.get("/users", dependencies=[Depends(_require_admin)])
 async def list_all_users():
-    return users.list_users()
+    from . import db
+    admin_users = users.list_users()
+    # Also include VPN peers as "vpn" role users
+    vpn_peers = db.fetchall(
+        "SELECT id, name, portal_email, enabled, activated, created, note, group_id FROM wg_peers WHERE portal_email != '' OR note LIKE '%@%' ORDER BY id"
+    )
+    for p in vpn_peers:
+        parts = p["name"].split(" ", 1)
+        admin_users.append({
+            "id": f"vpn-{p['id']}",
+            "firstname": parts[0] if parts else p["name"],
+            "lastname": parts[1] if len(parts) > 1 else "",
+            "email": p["portal_email"] or p["note"],
+            "role": "vpn",
+            "active": p["activated"],
+            "created": p["created"],
+            "accepted": "" if not p["activated"] else p["created"],
+        })
+    return admin_users
 
 
 @router.post("/users/invite", status_code=201, dependencies=[Depends(_require_admin)])
@@ -188,8 +206,17 @@ async def update_user(user_id: int, req: UpdateUserRequest):
 
 
 @router.delete("/users/{user_id}", dependencies=[Depends(_require_admin)])
-async def delete_user(user_id: int):
-    if users.delete_user(user_id):
+async def delete_user(user_id: str):
+    # Handle VPN peer deletion (id format: "vpn-123")
+    if str(user_id).startswith("vpn-"):
+        peer_id = int(str(user_id).split("-", 1)[1])
+        from .wireguard import peers
+        try:
+            peers.delete_peer(peer_id)
+            return {"deleted": user_id}
+        except ValueError:
+            raise HTTPException(404, "VPN peer not found")
+    if users.delete_user(int(user_id)):
         return {"deleted": user_id}
     raise HTTPException(404, "User not found")
 

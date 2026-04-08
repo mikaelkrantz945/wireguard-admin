@@ -141,6 +141,29 @@ header p{color:#8b949e;font-size:.85rem}
     </div>
     <div class="config-display" id="peerConfig"></div>
   </div>
+
+  <div class="card">
+    <h2>VPN Two-Factor Authentication (2FA)</h2>
+    <div id="portal2faStatus"></div>
+  </div>
+</div>
+
+<!-- Portal 2FA Setup Modal -->
+<div id="portal2faModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:center;justify-content:center">
+  <div class="card" style="width:420px;text-align:center">
+    <h2>Setup VPN 2FA</h2>
+    <p style="color:#8b949e;font-size:.85rem;margin:.5rem 0">Scan with Google Authenticator</p>
+    <div class="qr-container"><img id="portal2faQr"></div>
+    <p style="color:#8b949e;font-size:.82rem">Or enter manually:</p>
+    <input type="text" id="portal2faSecret" readonly style="font-family:monospace;text-align:center;margin:.3rem 0;font-size:.9rem" onclick="this.select()">
+    <p style="color:#8b949e;font-size:.82rem;margin-top:.7rem">Enter 6-digit code to verify:</p>
+    <input type="text" id="portal2faCode" placeholder="000000" style="text-align:center;font-size:1.3rem;letter-spacing:.4rem" maxlength="6">
+    <p class="err" id="portal2faErr"></p>
+    <div class="actions" style="justify-content:center;margin-top:.5rem">
+      <button class="btn-sm btn-secondary" onclick="closePortal2faModal()">Cancel</button>
+      <button class="btn-sm btn" onclick="doPortalEnable2fa()">Enable 2FA</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -233,6 +256,41 @@ async function showApp(){
   document.getElementById('peerStatus').innerHTML=meR.enabled?'<span class="badge badge-enabled">enabled</span>':'<span class="badge badge-disabled">disabled</span>';
   document.getElementById('peerQr').src=qrR.qr_code;
   document.getElementById('peerConfig').textContent=cfgR.config;
+  loadPortal2faStatus();
+}
+
+// 2FA management
+async function loadPortal2faStatus(){
+  const me=await api('/portal/me').then(r=>r.json());
+  const el=document.getElementById('portal2faStatus');
+  if(me.require_2fa){
+    el.innerHTML='<p style="color:#3fb950;margin-bottom:.5rem">2FA is enabled for your VPN connection.</p><p style="color:#8b949e;font-size:.82rem">You will need to authenticate with your TOTP code each time your session expires.</p><button class="btn-sm" style="background:#da3633;color:#fff;margin-top:.5rem" onclick="doPortalDisable2fa()">Disable 2FA</button>';
+  }else{
+    el.innerHTML='<p style="color:#8b949e;margin-bottom:.5rem">2FA is not enabled. Enable it to require authentication after connecting to VPN.</p><button class="btn-sm btn" onclick="setupPortal2fa()">Enable VPN 2FA</button>';
+  }
+}
+async function setupPortal2fa(){
+  const r=await api(`/vpn-auth/setup/${PEER.id}`,{method:'POST'});
+  if(!r.ok){alert('Failed');return}
+  const d=await r.json();
+  document.getElementById('portal2faQr').src=d.qr_code;
+  document.getElementById('portal2faSecret').value=d.secret;
+  document.getElementById('portal2faCode').value='';
+  document.getElementById('portal2faErr').textContent='';
+  window._p2faSecret=d.secret;
+  document.getElementById('portal2faModal').style.display='flex';
+}
+function closePortal2faModal(){document.getElementById('portal2faModal').style.display='none'}
+async function doPortalEnable2fa(){
+  const code=document.getElementById('portal2faCode').value;
+  const r=await api(`/vpn-auth/enable/${PEER.id}`,{method:'POST',body:JSON.stringify({secret:window._p2faSecret,code:code})});
+  if(r.ok){closePortal2faModal();loadPortal2faStatus()}
+  else{const e=await r.json();document.getElementById('portal2faErr').textContent=e.detail||'Invalid code'}
+}
+async function doPortalDisable2fa(){
+  if(!confirm('Disable VPN 2FA?'))return;
+  await api(`/vpn-auth/disable/${PEER.id}`,{method:'POST'});
+  loadPortal2faStatus();
 }
 
 function downloadConfig(){

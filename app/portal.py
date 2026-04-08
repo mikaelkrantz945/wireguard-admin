@@ -300,6 +300,7 @@ async def portal_me(peer: dict = Security(_require_portal_user)):
         "allowed_ips": peer["allowed_ips"],
         "enabled": peer["enabled"],
         "activated": peer.get("activated", False),
+        "require_2fa": peer.get("require_2fa", False),
     }
 
 

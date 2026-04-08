@@ -30,6 +30,11 @@ SETTING_DEFS = {
         "default": "25",
         "description": "Default keepalive interval (seconds) for new peers",
     },
+    "vpn_2fa_session_hours": {
+        "label": "VPN 2FA Session Duration (hours)",
+        "default": "12",
+        "description": "How long a VPN 2FA session lasts before re-authentication is required",
+    },
     "portal_welcome_message": {
         "label": "Portal Welcome Message",
         "default": "",

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WireGuard VPN — Authentication Required</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e1e4e8;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.box{background:#1c1f26;padding:2rem;border-radius:8px;width:400px;text-align:center}
+.box h1{margin-bottom:.3rem;font-size:1.4rem}
+.box p{color:#8b949e;font-size:.85rem;margin-bottom:1rem}
+.box input{width:100%;padding:.8rem;margin:.5rem 0;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:1.4rem;text-align:center;letter-spacing:.5rem}
+.box button{width:100%;padding:.7rem;margin-top:.5rem;background:#238636;border:none;border-radius:4px;color:#fff;font-size:1rem;cursor:pointer}
+.box button:hover{background:#2ea043}
+.err{color:#f85149;margin-top:.5rem;font-size:.85rem}
+.ok{color:#3fb950;margin-top:.5rem;font-size:.85rem}
+.icon{font-size:3rem;margin-bottom:1rem}
+.status{margin-top:1rem;padding:1rem;background:#0f1117;border-radius:4px}
+.status .label{color:#8b949e;font-size:.82rem}
+.status .value{font-size:.95rem;margin-top:.2rem}
+</style>
+</head>
+<body>
+
+<div class="box" id="authBox">
+  <div class="icon">&#128274;</div>
+  <h1>VPN Authentication</h1>
+  <p>Enter your 2FA code from Google Authenticator to access the network.</p>
+  <input type="text" id="totpCode" placeholder="000000" maxlength="6" autocomplete="one-time-code" autofocus>
+  <button onclick="doVerify()">Authenticate</button>
+  <p class="err" id="authErr"></p>
+</div>
+
+<div class="box" id="successBox" style="display:none">
+  <div class="icon">&#9989;</div>
+  <h1>Authenticated!</h1>
+  <p>Your VPN access is now active. You can close this page.</p>
+  <div class="status">
+    <div class="label">Peer</div>
+    <div class="value" id="peerName"></div>
+    <div class="label" style="margin-top:.5rem">Session expires</div>
+    <div class="value" id="sessionExpires"></div>
+  </div>
+</div>
+
+<div class="box" id="alreadyBox" style="display:none">
+  <div class="icon">&#9989;</div>
+  <h1>Already Authenticated</h1>
+  <p>Your VPN session is active. You can close this page and browse normally.</p>
+  <div class="status">
+    <div class="label">Session expires</div>
+    <div class="value" id="alreadyExpires"></div>
+  </div>
+</div>
+
+<script>
+async function doVerify(){
+  const code=document.getElementById('totpCode').value.trim();
+  if(!code||code.length<6){document.getElementById('authErr').textContent='Enter your 6-digit code';return}
+  try{
+    const r=await fetch('/vpn-auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})});
+    if(r.ok){
+      const d=await r.json();
+      document.getElementById('authBox').style.display='none';
+      document.getElementById('successBox').style.display='';
+      document.getElementById('peerName').textContent=d.peer_name;
+      document.getElementById('sessionExpires').textContent=d.expires.replace('T',' ').slice(0,19)+' UTC';
+    }else{
+      const e=await r.json();
+      document.getElementById('authErr').textContent=e.detail||'Invalid code';
+    }
+  }catch(x){document.getElementById('authErr').textContent='Connection error'}
+}
+
+// Auto-submit on 6 digits
+document.getElementById('totpCode').addEventListener('input',function(){
+  if(this.value.length===6)doVerify();
+});
+
+// Check if already authenticated
+(async function(){
+  try{
+    const r=await fetch('/vpn-auth/status');
+    if(r.ok){
+      const d=await r.json();
+      if(d.authenticated){
+        document.getElementById('authBox').style.display='none';
+        document.getElementById('alreadyBox').style.display='';
+        document.getElementById('alreadyExpires').textContent=d.expires.replace('T',' ').slice(0,19)+' UTC';
+      }
+    }
+  }catch(e){}
+})();
+</script>
+</body>
+</html>

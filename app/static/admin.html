@@ -157,7 +157,7 @@ tr:hover{background:#1c1f26}
         <input type="text" id="peerFilter" placeholder="Filter peers..." oninput="filterPeers()">
         <button class="btn btn-primary" onclick="showCreatePeer()">+ New Peer</button>
       </div>
-      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Group</th><th>ACL</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Activation</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
+      <table><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Group</th><th>ACL</th><th>Endpoint</th><th>Handshake</th><th>RX/TX</th><th>Activation</th><th>2FA</th><th>Status</th><th></th></tr></thead><tbody id="peersTable"></tbody></table>
     </div>
 
     <!-- Interfaces -->
@@ -292,6 +292,9 @@ tr:hover{background:#1c1f26}
     <hr style="border-color:#30363d;margin:.8rem 0">
     <label>Portal Email<input type="email" id="editPeerPortalEmail"></label>
     <label>New Portal Password<input type="text" id="editPeerPortalPass" placeholder="Leave empty to keep current"></label>
+    <hr style="border-color:#30363d;margin:.8rem 0">
+    <p style="color:#8b949e;font-size:.82rem;margin-bottom:.3rem">VPN 2FA — require TOTP authentication after connecting</p>
+    <div id="editPeer2faStatus"></div>
     <p class="err" id="editPeerErr"></p>
     <div class="actions">
       <button class="btn btn-danger" onclick="doDeletePeer()" style="margin-right:auto">Delete</button>
@@ -422,6 +425,25 @@ tr:hover{background:#1c1f26}
     <div class="actions">
       <button class="btn btn-secondary" onclick="closeModal('importUsersModal')">Close</button>
       <button class="btn btn-primary" id="importBtn" onclick="doImportUsers()">Import Selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- VPN 2FA Setup Modal -->
+<div class="modal-bg" id="vpn2faModal">
+  <div class="modal" style="width:460px">
+    <h2>Setup VPN 2FA: <span id="vpn2faTitle"></span></h2>
+    <p style="color:#8b949e;font-size:.85rem;margin:.5rem 0">Scan this QR code with Google Authenticator to enable 2FA on VPN connections.</p>
+    <div class="qr-container"><img id="vpn2faQr"></div>
+    <label style="font-size:.85rem;color:#8b949e">Or enter manually:</label>
+    <input type="text" id="vpn2faSecret" readonly style="font-family:monospace;text-align:center;margin:.3rem 0" onclick="this.select()">
+    <label style="font-size:.85rem;color:#8b949e;margin-top:.7rem">Enter 6-digit code to verify:</label>
+    <input type="text" id="vpn2faCode" placeholder="000000" style="text-align:center;font-size:1.3rem;letter-spacing:.4rem" maxlength="6">
+    <input type="hidden" id="vpn2faPeerId">
+    <p class="err" id="vpn2faErr"></p>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeModal('vpn2faModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doEnableVpn2fa()">Enable VPN 2FA</button>
     </div>
   </div>
 </div>
@@ -615,13 +637,14 @@ function filterPeers(){
     <td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td>
     <td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td>
     <td>${p.activated?badge('activated','enabled'):badge('pending','pending')}</td>
+    <td>${p.require_2fa?badge('required','wireguard'):'-'}</td>
     <td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm btn-secondary" onclick="showPeerConfig(${p.id},'${p.name}')">Config</button>
       ${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditPeer(${p.id})">Edit</button>
       ${!p.activated?`<button class="btn btn-sm btn-primary" onclick="sendActivation(${p.id})">Send Activation</button>`:''}
       <button class="btn btn-sm ${p.enabled?'btn-danger':'btn-primary'}" onclick="${p.enabled?'togglePeer('+p.id+',false)':'togglePeer('+p.id+',true)'}">${p.enabled?'Disable':'Enable'}</button>`:''}
-    </td></tr>`).join(''):'<tr><td colspan="11" class="empty">No peers</td></tr>';
+    </td></tr>`).join(''):'<tr><td colspan="12" class="empty">No peers</td></tr>';
 }
 async function showCreatePeer(){
   const ifaceId=document.getElementById('peerIfaceFilter').value;
@@ -666,6 +689,7 @@ async function showEditPeer(id){
   document.getElementById('editPeerName').value=p.name;document.getElementById('editPeerNote').value=p.note||'';
   document.getElementById('editPeerDns').value=p.dns||'';document.getElementById('editPeerKeepalive').value=p.persistent_keepalive||25;
   document.getElementById('editPeerPortalEmail').value=p.portal_email||'';document.getElementById('editPeerPortalPass').value='';
+  render2faStatus(p);
   await Promise.all([populateAclDropdown('editPeerAcl',p.acl_profile_id||0),populateGroupDropdown('editPeerGroup',p.group_id||0)]);
   document.getElementById('editPeerErr').textContent='';showModal('editPeerModal');
 }
@@ -790,6 +814,41 @@ async function verifyTotp(){
 async function disableTotp(){
   if(!confirm('Disable 2FA?'))return;
   await api('/admin/auth/totp/disable',{method:'POST'});loadSecurity();
+}
+
+// ── VPN 2FA ──
+function render2faStatus(peer){
+  const el=document.getElementById('editPeer2faStatus');
+  if(peer.require_2fa){
+    el.innerHTML=`<span class="badge badge-enabled" style="margin-right:.5rem">2FA enabled</span><button class="btn btn-sm btn-danger" onclick="doDisableVpn2fa(${peer.id})">Disable 2FA</button>`;
+  }else{
+    el.innerHTML=`<button class="btn btn-sm btn-primary" onclick="setupVpn2fa(${peer.id},'${peer.name}')">Enable VPN 2FA</button>`;
+  }
+}
+async function setupVpn2fa(peerId,name){
+  const r=await api(`/vpn-auth/setup/${peerId}`,{method:'POST'});
+  if(!r.ok){alert('Failed to setup 2FA');return}
+  const d=await r.json();
+  document.getElementById('vpn2faPeerId').value=peerId;
+  document.getElementById('vpn2faTitle').textContent=name;
+  document.getElementById('vpn2faQr').src=d.qr_code;
+  document.getElementById('vpn2faSecret').value=d.secret;
+  document.getElementById('vpn2faCode').value='';
+  document.getElementById('vpn2faErr').textContent='';
+  window._vpn2faSecret=d.secret;
+  showModal('vpn2faModal');
+}
+async function doEnableVpn2fa(){
+  const peerId=document.getElementById('vpn2faPeerId').value;
+  const code=document.getElementById('vpn2faCode').value;
+  const r=await api(`/vpn-auth/enable/${peerId}`,{method:'POST',body:JSON.stringify({secret:window._vpn2faSecret,code:code})});
+  if(r.ok){closeModal('vpn2faModal');closeModal('editPeerModal');loadPeers()}
+  else{const e=await r.json();document.getElementById('vpn2faErr').textContent=e.detail||'Invalid code'}
+}
+async function doDisableVpn2fa(peerId){
+  if(!confirm('Disable VPN 2FA for this peer?'))return;
+  await api(`/vpn-auth/disable/${peerId}`,{method:'POST'});
+  closeModal('editPeerModal');loadPeers();
 }
 
 // ── Groups ──

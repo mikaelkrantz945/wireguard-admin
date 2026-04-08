@@ -13,6 +13,7 @@ from .wireguard.routes import router as wg_router
 from .hostbill.routes import router as hostbill_router
 from .integrations.routes import router as integrations_router
 from .portal import router as portal_router
+from .vpn2fa_routes import router as vpn2fa_router
 from .middleware import RequestLogMiddleware
 from . import users, db
 
@@ -30,6 +31,21 @@ async def startup():
     seed_default()
     from .server_settings import seed_defaults
     seed_defaults()
+    # Start 2FA session cleanup background task
+    import asyncio
+    async def _2fa_cleanup_loop():
+        await asyncio.sleep(30)  # Wait for startup
+        while True:
+            try:
+                from .vpn2fa import cleanup_expired_sessions, apply_2fa_rules
+                cleanup_expired_sessions()
+                ifaces = db.fetchall("SELECT name FROM wg_interfaces")
+                for iface in ifaces:
+                    apply_2fa_rules(iface["name"])
+            except Exception as e:
+                print(f"[2fa-cleanup] {e}")
+            await asyncio.sleep(60)
+    asyncio.create_task(_2fa_cleanup_loop())
 
 
 app.add_middleware(RequestLogMiddleware)
@@ -38,6 +54,7 @@ app.include_router(wg_router)
 app.include_router(hostbill_router)
 app.include_router(integrations_router)
 app.include_router(portal_router)
+app.include_router(vpn2fa_router)
 
 # Serve admin UI
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

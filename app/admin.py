@@ -136,7 +136,7 @@ async def list_all_users():
     admin_users = users.list_users()
     # Also include VPN peers as "vpn" role users
     vpn_peers = db.fetchall(
-        "SELECT id, name, portal_email, enabled, activated, created, note, group_id FROM wg_peers WHERE portal_email != '' OR note LIKE '%@%' ORDER BY id"
+        "SELECT id, name, portal_email, enabled, activated, created, note, group_id FROM wg_peers WHERE portal_email != '' OR note LIKE '%%@%%' ORDER BY id"
     )
     for p in vpn_peers:
         parts = p["name"].split(" ", 1)

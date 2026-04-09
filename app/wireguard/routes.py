@@ -22,6 +22,7 @@ class CreateInterfaceRequest(BaseModel):
     endpoint: str = ""
     post_up: str = "iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE"
     post_down: str = "iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE"
+    require_2fa: bool = True
 
 
 class UpdateInterfaceRequest(BaseModel):
@@ -29,6 +30,7 @@ class UpdateInterfaceRequest(BaseModel):
     endpoint: str | None = None
     post_up: str | None = None
     post_down: str | None = None
+    require_2fa: bool | None = None
 
 
 class CreatePeerRequest(BaseModel):
@@ -116,10 +118,10 @@ async def create_interface(req: CreateInterfaceRequest):
     row = db.query(
         """INSERT INTO wg_interfaces
            (name, private_key, public_key, listen_port, address, subnet,
-            dns, post_up, post_down, endpoint, enabled, created)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s) RETURNING id""",
+            dns, post_up, post_down, endpoint, enabled, require_2fa, created)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s,%s) RETURNING id""",
         (req.name, private_key, public_key, req.listen_port, address, req.subnet,
-         req.dns, req.post_up, req.post_down, endpoint, now),
+         req.dns, req.post_up, req.post_down, endpoint, req.require_2fa, now),
         fetchone=True, commit=True,
     )
 
@@ -162,6 +164,9 @@ async def update_interface(iface_id: int, req: UpdateInterfaceRequest):
     if req.post_down is not None:
         updates.append("post_down = %s")
         params.append(req.post_down)
+    if req.require_2fa is not None:
+        updates.append("require_2fa = %s")
+        params.append(req.require_2fa)
     if not updates:
         raise HTTPException(400, "No fields to update")
     params.append(iface_id)

@@ -186,8 +186,18 @@ def apply_2fa_rules(interface_name: str = "wg0"):
             capture_output=True, check=True,
         )
 
-    # Get 2FA-required peers
-    peers_2fa = db.fetchall("SELECT * FROM wg_peers WHERE require_2fa = TRUE AND enabled = TRUE")
+    # Check if this interface has 2FA enabled
+    iface_row = db.fetchone("SELECT require_2fa FROM wg_interfaces WHERE name = %s", (interface_name,))
+    if iface_row and not iface_row.get("require_2fa", True):
+        # Interface has 2FA disabled — no rules needed
+        return
+
+    # Get 2FA-required peers on interfaces with 2FA enabled
+    peers_2fa = db.fetchall(
+        """SELECT p.* FROM wg_peers p
+           JOIN wg_interfaces i ON p.interface_id = i.id
+           WHERE p.require_2fa = TRUE AND p.enabled = TRUE AND i.require_2fa = TRUE"""
+    )
     if not peers_2fa:
         return
 

@@ -165,7 +165,7 @@ tr:hover{background:#1c1f26}
       <div class="toolbar">
         <button class="btn btn-primary" onclick="showModal('createIfaceModal')">+ New Interface</button>
       </div>
-      <table><thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Subnet</th><th>Port</th><th>Endpoint</th><th>Peers</th><th>Status</th><th></th></tr></thead><tbody id="ifacesTable"></tbody></table>
+      <table><thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Subnet</th><th>Port</th><th>Endpoint</th><th>Peers</th><th>2FA</th><th>Status</th><th></th></tr></thead><tbody id="ifacesTable"></tbody></table>
     </div>
 
     <!-- Groups -->
@@ -315,6 +315,7 @@ tr:hover{background:#1c1f26}
     <label>Endpoint<input type="text" id="newIfaceEndpoint" placeholder="auto"></label>
     <label>PostUp<input type="text" id="newIfacePostUp" value="iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE"></label>
     <label>PostDown<input type="text" id="newIfacePostDown" value="iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE"></label>
+    <label style="margin-top:.5rem"><input type="checkbox" id="newIface2fa" checked> Require VPN 2FA on this interface</label>
     <p class="err" id="newIfaceErr"></p>
     <div class="actions">
       <button class="btn btn-secondary" onclick="closeModal('createIfaceModal')">Cancel</button>
@@ -727,13 +728,14 @@ async function loadInterfaces(){
   document.getElementById('ifacesTable').innerHTML=ifaces.length?ifaces.map(i=>`<tr>
     <td>${i.id}</td><td class="mono">${i.name}</td><td class="mono">${i.address}</td><td class="mono">${i.subnet}</td>
     <td>${i.listen_port}</td><td class="mono">${i.endpoint}</td><td>${i.peer_count}</td>
+    <td>${i.require_2fa?badge('required','wireguard'):badge('disabled','disabled')}</td>
     <td>${i.is_up?badge('up','up'):badge('down','down')}</td>
     <td>${adm?`<button class="btn btn-sm ${i.is_up?'btn-danger':'btn-primary'}" onclick="toggleIface(${i.id},${i.is_up})">${i.is_up?'Down':'Up'}</button>
     <button class="btn btn-sm btn-danger" onclick="deleteIface(${i.id})">Delete</button>`:''}</td>
-  </tr>`).join(''):'<tr><td colspan="9" class="empty">No interfaces</td></tr>';
+  </tr>`).join(''):'<tr><td colspan="10" class="empty">No interfaces</td></tr>';
 }
 async function doCreateIface(){
-  const d={name:document.getElementById('newIfaceName').value,listen_port:parseInt(document.getElementById('newIfacePort').value)||51820,subnet:document.getElementById('newIfaceSubnet').value,dns:document.getElementById('newIfaceDns').value,endpoint:document.getElementById('newIfaceEndpoint').value,post_up:document.getElementById('newIfacePostUp').value,post_down:document.getElementById('newIfacePostDown').value};
+  const d={name:document.getElementById('newIfaceName').value,listen_port:parseInt(document.getElementById('newIfacePort').value)||51820,subnet:document.getElementById('newIfaceSubnet').value,dns:document.getElementById('newIfaceDns').value,endpoint:document.getElementById('newIfaceEndpoint').value,post_up:document.getElementById('newIfacePostUp').value,post_down:document.getElementById('newIfacePostDown').value,require_2fa:document.getElementById('newIface2fa').checked};
   const r=await api('/wg/interfaces',{method:'POST',body:JSON.stringify(d)});
   if(r.ok){closeModal('createIfaceModal');loadInterfaces()}else{const e=await r.json();document.getElementById('newIfaceErr').textContent=e.detail||'Failed'}
 }

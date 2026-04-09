@@ -123,19 +123,19 @@ async def captive_portal_redirect(request, call_next):
         if peer and peer.get("require_2fa"):
             session = vpn2fa.check_session(client_ip)
             if not session.get("authenticated"):
+                from . import db as _db
+                _iface = _db.fetchone("SELECT address FROM wg_interfaces ORDER BY id LIMIT 1")
+                _server_ip = _iface["address"].split("/")[0] if _iface else "172.19.1.1"
+                captive_url = f"http://{_server_ip}:8092/vpn-auth/captive"
                 # OS captive portal detection endpoints
-                # Apple
                 if "captive.apple.com" in request.headers.get("host", "") or path == "/hotspot-detect.html":
                     return HTMLResponse('<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>',
-                                       status_code=302, headers={"Location": f"http://{request.headers.get('host', '')}/vpn-auth/captive"})
-                # Android
+                                       status_code=302, headers={"Location": captive_url})
                 if path == "/generate_204" or "connectivitycheck" in request.headers.get("host", ""):
-                    return RedirectResponse(url="/vpn-auth/captive", status_code=302)
-                # Windows
+                    return RedirectResponse(url=captive_url, status_code=302)
                 if path == "/connecttest.txt" or "msftconnecttest" in request.headers.get("host", ""):
-                    return RedirectResponse(url="/vpn-auth/captive", status_code=302)
-                # Any other HTTP request → redirect to captive portal
-                return RedirectResponse(url="/vpn-auth/captive", status_code=302)
+                    return RedirectResponse(url=captive_url, status_code=302)
+                return RedirectResponse(url=captive_url, status_code=302)
 
     return await call_next(request)
 

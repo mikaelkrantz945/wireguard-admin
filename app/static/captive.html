@@ -55,11 +55,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </div>
 
 <script>
+// Use current origin for API calls (works even after DNAT since all traffic redirects here)
+const API = '';
+
 async function doVerify(){
   const code=document.getElementById('totpCode').value.trim();
   if(!code||code.length<6){document.getElementById('authErr').textContent='Enter your 6-digit code';return}
   try{
-    const r=await fetch('/vpn-auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})});
+    const r=await fetch(API+'/vpn-auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})});
     if(r.ok){
       const d=await r.json();
       document.getElementById('authBox').style.display='none';
@@ -81,7 +84,7 @@ document.getElementById('totpCode').addEventListener('input',function(){
 // Check if already authenticated
 (async function(){
   try{
-    const r=await fetch('/vpn-auth/status');
+    const r=await fetch(API+'/vpn-auth/status');
     if(r.ok){
       const d=await r.json();
       if(d.authenticated){

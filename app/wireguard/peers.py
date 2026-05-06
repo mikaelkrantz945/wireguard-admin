@@ -168,10 +168,27 @@ def get_peer_qr(peer_id: int) -> str:
 
 
 def _sync_config(interface_id: int):
-    """Regenerate server config and apply it if the interface is up."""
+    """Regenerate server config and apply it if the interface is up.
+
+    Safety: refuses to overwrite if live config has peers not in DB
+    (prevents wiping imported peers that haven't been registered yet).
+    """
     iface = db.fetchone("SELECT * FROM wg_interfaces WHERE id = %s", (interface_id,))
     if not iface:
         return
+
+    # Safety check: compare live WG peers vs DB peers
+    if manager.is_interface_up(iface["name"]):
+        live_keys = _get_live_peer_keys(iface["name"])
+        db_keys = {p["public_key"] for p in db.fetchall(
+            "SELECT public_key FROM wg_peers WHERE interface_id = %s", (interface_id,)
+        )}
+        missing_from_db = live_keys - db_keys
+        if missing_from_db:
+            print(f"[sync_config] BLOCKED: {len(missing_from_db)} live peers on {iface['name']} "
+                  f"not in DB. Run import first. Keys: {[k[:16]+'...' for k in missing_from_db]}")
+            return
+
     peer_list = db.fetchall("SELECT * FROM wg_peers WHERE interface_id = %s", (interface_id,))
     manager.write_server_config(dict(iface), [dict(p) for p in peer_list])
     if manager.is_interface_up(iface["name"]):
@@ -180,6 +197,21 @@ def _sync_config(interface_id: int):
         except RuntimeError:
             pass
     _apply_acl(interface_id)
+
+
+def _get_live_peer_keys(interface_name: str) -> set[str]:
+    """Get public keys of all peers currently in the live WireGuard interface."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["wg", "show", interface_name, "peers"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return {line.strip() for line in result.stdout.strip().split("\n") if line.strip()}
+    except Exception:
+        pass
+    return set()
 
 
 def _apply_acl(interface_id: int):

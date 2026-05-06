@@ -32,6 +32,8 @@ async def startup():
     seed_default()
     from .server_settings import seed_defaults
     seed_defaults()
+    # Auto-detect unimported WireGuard peers on startup
+    _check_unimported_peers()
     # Start 2FA session cleanup background task
     import asyncio
     async def _2fa_cleanup_loop():
@@ -79,6 +81,39 @@ async def health():
     if settings.hostbill_enabled:
         services.append("hostbill")
     return {"status": "ok", "services": services}
+
+
+def _check_unimported_peers():
+    """On startup, check if live WireGuard has peers not in DB. Log warning if so."""
+    import subprocess
+    try:
+        from .wireguard import importer
+        configs = importer.scan_configs(settings.wg_config_dir)
+        for cfg in configs:
+            if "error" in cfg:
+                continue
+            iface_name = cfg["name"]
+            # Check live peers
+            result = subprocess.run(
+                ["wg", "show", iface_name, "peers"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                continue
+            live_keys = {k.strip() for k in result.stdout.strip().split("\n") if k.strip()}
+            if not live_keys:
+                continue
+            # Check DB
+            db_keys = {r["public_key"] for r in db.fetchall(
+                "SELECT public_key FROM wg_peers"
+            )}
+            missing = live_keys - db_keys
+            if missing:
+                print(f"[startup] WARNING: {len(missing)} WireGuard peers on {iface_name} "
+                      f"are NOT in the database. Config sync is BLOCKED for this interface "
+                      f"until you import them via Admin → Import tab.")
+    except Exception as e:
+        print(f"[startup] Peer check skipped: {e}")
 
 
 class BootstrapRequest(BaseModel):

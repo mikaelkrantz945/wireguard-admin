@@ -43,7 +43,7 @@ Open-source VPN management for hosting providers and teams.
 ```
 Internet
   |
-  Nginx (HTTPS, Let's Encrypt)
+  Nginx (HTTPS, Let's Encrypt)        — or external reverse proxy
   |   proxy_pass :8092
   |
   Docker Compose
@@ -57,6 +57,10 @@ Internet
 ```
 
 The API container runs with `network_mode: host` and `CAP_NET_ADMIN` so that `wg` and `wg-quick` commands directly affect the host's WireGuard interfaces. Config changes are applied live using `wg syncconf` for zero-downtime reloads.
+
+Two deployment modes are supported:
+- **Local TLS** (`ssl_mode: local`) — Nginx + Certbot handles HTTPS directly (default)
+- **Reverse proxy** (`ssl_mode: proxy`) — An external reverse proxy handles TLS, local Nginx runs HTTP only
 
 ## Quick start
 
@@ -108,6 +112,20 @@ ansible-playbook -i inventory.yml site.yml
 ansible-playbook -i inventory.yml certbot.yml
 ```
 
+### Behind an external reverse proxy
+
+If another server handles TLS termination (e.g., a load balancer or separate nginx), set `ssl_mode: proxy` in your inventory:
+
+```yaml
+vars:
+  ssl_mode: "proxy"
+  base_url: "https://vpn.example.com"
+  # listen_port: 8080        # Nginx listen port (default: 80)
+  # trusted_proxy: 10.0.0.1  # Upstream proxy IP for real_ip_header
+```
+
+This skips Certbot, keeps Nginx on HTTP only, and trusts `X-Forwarded-Proto` / `X-Forwarded-For` headers from the upstream proxy. Configure your external proxy to pass these headers and proxy to this server's port 80.
+
 ### Quick redeploy
 
 ```bash
@@ -121,8 +139,8 @@ cd ansible && ansible-playbook -i inventory.yml deploy.yml
 | common | Base packages, UFW (SSH, HTTP, HTTPS, WG/UDP), timezone |
 | docker | Docker CE + Compose plugin, adds user to docker group |
 | wireguard | wireguard-tools, IP forwarding (sysctl) |
-| nginx | Reverse proxy vhost, reload handler |
-| certbot | Let's Encrypt SSL certificate |
+| nginx | Reverse proxy vhost, reload handler (HTTP-only in proxy mode) |
+| certbot | Let's Encrypt SSL certificate (skipped in proxy mode) |
 | app | Git clone, .env template, docker compose up, health check |
 
 ## Configuration
@@ -143,6 +161,15 @@ All settings via environment variables (`.env` file):
 | `SMTP_PORT` | `25` | SMTP port |
 | `SMTP_FROM` | `noreply@example.com` | From address for invite emails |
 | `BASE_URL` | `https://vpn.example.com` | Base URL for invite links |
+
+### Ansible inventory variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ssl_mode` | `local` | `local` = Certbot/Let's Encrypt on this server, `proxy` = external reverse proxy handles TLS |
+| `base_url` | `https://{{domain}}` | Public URL (set explicitly in proxy mode) |
+| `listen_port` | `80` | Nginx listen port (proxy mode only) |
+| `trusted_proxy` | `0.0.0.0/0` | Upstream proxy IP for `set_real_ip_from` (proxy mode only) |
 
 ## ACL Profiles
 
@@ -990,6 +1017,6 @@ nslookup example.com
 | Auth | SHA-256 hashed sessions + API keys, TOTP 2FA (pyotp) |
 | VPN | WireGuard (kernel module + wireguard-tools) |
 | Container | Docker Compose (host network mode) |
-| Proxy | Nginx + Let's Encrypt (Certbot) |
+| Proxy | Nginx + Let's Encrypt (Certbot), or external reverse proxy |
 | IaC | Ansible (6 roles) |
 | Backup | pg_dump sidecar (daily, 7-day retention) |

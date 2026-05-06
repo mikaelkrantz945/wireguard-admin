@@ -84,7 +84,10 @@ tr:hover{background:#1c1f26}
 <!-- Login Page -->
 <div class="page active" id="pgLogin">
   <div class="box">
-    <h1>WireGuard Admin</h1>
+    <div id="loginBranding" style="text-align:center;margin-bottom:.5rem">
+      <img id="loginLogo" src="" alt="" style="max-height:48px;max-width:200px;margin-bottom:.5rem;display:none;object-fit:contain">
+      <h1 id="loginTitle">WireGuard Admin</h1>
+    </div>
     <p>VPN Management Panel</p>
     <input type="email" id="loginEmail" placeholder="Email" autocomplete="email">
     <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password">
@@ -122,7 +125,10 @@ tr:hover{background:#1c1f26}
 <!-- Main App -->
 <div id="appView">
   <header>
-    <h1>WireGuard Admin</h1>
+    <div style="display:flex;align-items:center;gap:.6rem">
+      <img id="headerLogo" src="" alt="" style="max-height:36px;max-width:160px;display:none;object-fit:contain">
+      <h1 id="headerTitle">WireGuard Admin</h1>
+    </div>
     <div class="user-info">
       <span id="userLabel"></span>
       <span class="logout" onclick="doLogout()">Logout</span>
@@ -557,6 +563,27 @@ function esc(s){
 
 let TOKEN=sessionStorage.getItem('tk')||'';
 let USER=JSON.parse(sessionStorage.getItem('usr')||'null');
+
+// Load branding on page load
+(async function loadBranding(){
+  try{
+    const r=await fetch('/branding');
+    if(!r.ok)return;
+    const b=await r.json();
+    if(b.title){
+      document.getElementById('loginTitle').textContent=b.title;
+      document.getElementById('headerTitle').textContent=b.title;
+      document.title=b.title;
+    }
+    if(b.logo_url){
+      ['loginLogo','headerLogo'].forEach(id=>{
+        const el=document.getElementById(id);
+        el.src=b.logo_url;
+        el.style.display='inline-block';
+      });
+    }
+  }catch(e){}
+})();
 let allPeers=[];
 let _currentConfig='';
 let _currentPeerName='';

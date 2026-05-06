@@ -75,6 +75,17 @@ async def portal_ui():
     return FileResponse(os.path.join(_static_dir, "portal.html"))
 
 
+@app.get("/branding")
+async def get_branding():
+    """Public endpoint: returns branding settings for login/portal pages."""
+    from .server_settings import get as get_setting
+    return {
+        "title": get_setting("branding_title") or "WireGuard Admin",
+        "logo_url": get_setting("branding_logo_url") or "",
+        "portal_title": get_setting("branding_portal_title") or "WireGuard VPN",
+    }
+
+
 @app.get("/health")
 async def health():
     services = ["wireguard"]

@@ -46,7 +46,8 @@ header p{color:#8b949e;font-size:.85rem}
 <!-- Login Page -->
 <div class="page active" id="pgLogin">
   <div class="box">
-    <h1>WireGuard VPN</h1>
+    <img id="portalLoginLogo" src="" alt="" style="max-height:48px;max-width:200px;margin-bottom:.5rem;display:none;object-fit:contain">
+    <h1 id="portalLoginTitle">WireGuard VPN</h1>
     <p>Sign in to view your VPN configuration</p>
     <div id="googleLoginSection" style="display:none">
       <button class="btn btn-google" onclick="doGoogleLogin()">
@@ -113,7 +114,10 @@ header p{color:#8b949e;font-size:.85rem}
 <!-- Main App -->
 <div id="appView">
   <header>
-    <h1>WireGuard VPN</h1>
+    <div style="display:flex;align-items:center;gap:.6rem">
+      <img id="portalHeaderLogo" src="" alt="" style="max-height:36px;max-width:160px;display:none;object-fit:contain">
+      <h1 id="portalHeaderTitle">WireGuard VPN</h1>
+    </div>
     <p id="welcomeMsg"></p>
   </header>
   <div class="logout" onclick="doLogout()">Sign out</div>
@@ -169,6 +173,28 @@ header p{color:#8b949e;font-size:.85rem}
 <script>
 let TOKEN=sessionStorage.getItem('ptk')||'';
 let PEER=JSON.parse(sessionStorage.getItem('ppeer')||'null');
+
+// Load branding
+(async function loadBranding(){
+  try{
+    const r=await fetch('/branding');
+    if(!r.ok)return;
+    const b=await r.json();
+    if(b.portal_title){
+      ['portalLoginTitle','portalHeaderTitle'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el)el.textContent=b.portal_title;
+      });
+      document.title=b.portal_title;
+    }
+    if(b.logo_url){
+      ['portalLoginLogo','portalHeaderLogo'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el){el.src=b.logo_url;el.style.display='inline-block'}
+      });
+    }
+  }catch(e){}
+})();
 let _googleIntegId=0;
 let _googleClientId='';
 let _peerConfig='';

@@ -1094,7 +1094,7 @@ async function loadSettings(){
   document.getElementById('settingsForm').innerHTML=_settingsData.map(s=>{
     const isBody=s.key.includes('_body');
     const field=isBody
-      ?`<textarea id="setting_${esc(s.key)}" placeholder="${esc(s.default)}" rows="8" style="width:100%;padding:.5rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.85rem;font-family:monospace;resize:vertical">${esc(s.value||'')}</textarea>`
+      ?`<textarea id="setting_${esc(s.key)}" placeholder="${esc(s.default)}" rows="8" style="width:100%;padding:.5rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.85rem;font-family:monospace;resize:vertical"></textarea>`
       :`<input type="text" id="setting_${esc(s.key)}" value="${esc(s.value||'')}" placeholder="${esc(s.default)}" style="width:100%;padding:.5rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.9rem">`;
     return`<div style="margin-bottom:1rem">
     <label style="font-size:.85rem;color:#8b949e">${esc(s.label)}</label>
@@ -1102,6 +1102,11 @@ async function loadSettings(){
     <p style="color:#6e7681;font-size:.78rem;margin-top:.2rem">${esc(s.description)}</p>
   </div>`;
   }).join('');
+  // Set textarea values via .value to preserve newlines (innerHTML escapes them)
+  _settingsData.filter(s=>s.key.includes('_body')).forEach(s=>{
+    const el=document.getElementById('setting_'+s.key);
+    if(el)el.value=s.value||'';
+  });
 }
 async function saveSettings(){
   document.getElementById('settingsSaved').textContent='Saving...';

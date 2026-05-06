@@ -5,6 +5,21 @@ from .config import settings as env_settings
 
 # Setting definitions: key -> {label, default_from_env, description}
 SETTING_DEFS = {
+    "branding_title": {
+        "label": "Site Title",
+        "default": "WireGuard Admin",
+        "description": "Title shown in header, login page, and browser tab",
+    },
+    "branding_logo_url": {
+        "label": "Logo URL",
+        "default": "",
+        "description": "URL to company logo image (displayed next to title, recommended max height 40px)",
+    },
+    "branding_portal_title": {
+        "label": "Portal Title",
+        "default": "WireGuard VPN",
+        "description": "Title shown on the user portal login and pages",
+    },
     "dns_servers": {
         "label": "DNS Servers",
         "default": env_settings.wg_default_dns,

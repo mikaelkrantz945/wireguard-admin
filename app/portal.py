@@ -47,22 +47,13 @@ def send_activation_email(peer_id: int, email: str, name: str, method: str = "pa
     else:
         activate_url = f"{BASE_URL}/portal/ui#activate={token}&method=password"
 
-    body = f"""Hi {name},
-
-Your WireGuard VPN account has been created.
-
-Click the link below to activate your account:
-
-{activate_url}
-
-{"You will be asked to set a password." if method == "password" else "You will sign in with your Google account."}
-
-This link is valid for 7 days.
-
-— WireGuard Admin
-"""
+    from .server_settings import get as get_setting
+    method_hint = "You will be asked to set a password." if method == "password" else "You will sign in with your Google account."
+    subject = get_setting("email_activation_subject") or "Activate your WireGuard VPN account"
+    body_template = get_setting("email_activation_body") or "Hi {name},\n\nActivate your account:\n\n{activate_url}\n\n{method_hint}"
+    body = body_template.format(name=name, activate_url=activate_url, method_hint=method_hint)
     msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = "Activate your WireGuard VPN account"
+    msg["Subject"] = subject
     msg["From"] = SMTP_FROM
     msg["To"] = email
     try:

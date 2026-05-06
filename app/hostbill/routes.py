@@ -109,20 +109,12 @@ def _create(req: ProvisionRequest) -> dict:
         smtp_port = int(os.environ.get("SMTP_PORT", "25"))
         smtp_from = os.environ.get("SMTP_FROM", "noreply@example.com")
         portal_url = f"{base_url}/portal/ui#setup-password={token}"
-        body = f"""Hi {name},
-
-Your WireGuard VPN service is now active!
-
-Your VPN configuration is ready. Visit the portal to set your password and download your config:
-
-{portal_url}
-
-You can also scan a QR code to set up WireGuard on your phone.
-
-— WireGuard Admin
-"""
+        from ..server_settings import get as get_setting
+        subject = get_setting("email_welcome_subject") or "Your WireGuard VPN is ready"
+        body_template = get_setting("email_welcome_body") or "Hi {name},\n\nYour VPN is ready:\n\n{portal_url}"
+        body = body_template.format(name=name, portal_url=portal_url)
         msg = MIMEText(body, "plain", "utf-8")
-        msg["Subject"] = "Your WireGuard VPN is ready"
+        msg["Subject"] = subject
         msg["From"] = smtp_from
         msg["To"] = req.client_email
         try:

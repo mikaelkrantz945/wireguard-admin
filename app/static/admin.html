@@ -580,6 +580,11 @@ let USER=JSON.parse(sessionStorage.getItem('usr')||'null');
         const el=document.getElementById(id);
         el.src=b.logo_url;
         el.style.display='inline-block';
+        if(b.logo_style==='light'){
+          el.style.background='#fff';
+          el.style.padding='4px 8px';
+          el.style.borderRadius='6px';
+        }
       });
     }
   }catch(e){}

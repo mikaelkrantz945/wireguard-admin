@@ -15,6 +15,11 @@ SETTING_DEFS = {
         "default": "",
         "description": "URL to company logo image (displayed next to title, recommended max height 40px)",
     },
+    "branding_logo_style": {
+        "label": "Logo Background",
+        "default": "none",
+        "description": "Set to 'light' to add a white rounded background behind the logo (for dark logos on dark theme), or 'none' for transparent",
+    },
     "branding_portal_title": {
         "label": "Portal Title",
         "default": "WireGuard VPN",

@@ -82,6 +82,7 @@ async def get_branding():
     return {
         "title": get_setting("branding_title") or "WireGuard Admin",
         "logo_url": get_setting("branding_logo_url") or "",
+        "logo_style": get_setting("branding_logo_style") or "none",
         "portal_title": get_setting("branding_portal_title") or "WireGuard VPN",
     }
 

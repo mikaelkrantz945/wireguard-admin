@@ -45,6 +45,36 @@ SETTING_DEFS = {
         "default": "",
         "description": "Custom message shown on the user portal login page (HTML allowed)",
     },
+    "email_invite_subject": {
+        "label": "Admin Invite Email — Subject",
+        "default": "WireGuard Admin — Invite",
+        "description": "Subject line for admin user invite emails",
+    },
+    "email_invite_body": {
+        "label": "Admin Invite Email — Body",
+        "default": "Hi {firstname},\n\nYou've been invited to the WireGuard Admin panel as {role}.\n\nClick the link below to set your password and activate your account:\n\n{invite_url}\n\nThis link expires in 7 days.\n\n— WireGuard Admin",
+        "description": "Body template for admin invite. Variables: {firstname}, {role}, {invite_url}",
+    },
+    "email_activation_subject": {
+        "label": "VPN Activation Email — Subject",
+        "default": "Activate your WireGuard VPN account",
+        "description": "Subject line for VPN peer activation emails",
+    },
+    "email_activation_body": {
+        "label": "VPN Activation Email — Body",
+        "default": "Hi {name},\n\nYour WireGuard VPN account has been created.\n\nClick the link below to activate your account:\n\n{activate_url}\n\n{method_hint}\n\nThis link is valid for 7 days.\n\n— WireGuard Admin",
+        "description": "Body template for VPN activation. Variables: {name}, {activate_url}, {method_hint}",
+    },
+    "email_welcome_subject": {
+        "label": "HostBill Welcome Email — Subject",
+        "default": "Your WireGuard VPN is ready",
+        "description": "Subject line for HostBill provisioned welcome emails",
+    },
+    "email_welcome_body": {
+        "label": "HostBill Welcome Email — Body",
+        "default": "Hi {name},\n\nYour WireGuard VPN service is now active!\n\nYour VPN configuration is ready. Visit the portal to set your password and download your config:\n\n{portal_url}\n\nYou can also scan a QR code to set up WireGuard on your phone.\n\n— WireGuard Admin",
+        "description": "Body template for HostBill welcome. Variables: {name}, {portal_url}",
+    },
 }
 
 

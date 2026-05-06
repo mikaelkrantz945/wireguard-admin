@@ -186,20 +186,12 @@ def delete_user(user_id: int) -> bool:
 
 
 def _send_invite_email(to: str, firstname: str, role: str, invite_url: str):
-    body = f"""Hi {firstname},
-
-You've been invited to the WireGuard Admin panel as {role}.
-
-Click the link below to set your password and activate your account:
-
-{invite_url}
-
-This link expires in 7 days.
-
-— WireGuard Admin
-"""
+    from .server_settings import get as get_setting
+    subject = get_setting("email_invite_subject") or "WireGuard Admin — Invite"
+    body_template = get_setting("email_invite_body") or "Hi {firstname},\n\nYou've been invited as {role}.\n\n{invite_url}"
+    body = body_template.format(firstname=firstname, role=role, invite_url=invite_url)
     msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = "WireGuard Admin — Invite"
+    msg["Subject"] = subject
     msg["From"] = SMTP_FROM
     msg["To"] = to
     try:

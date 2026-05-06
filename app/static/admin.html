@@ -1140,9 +1140,11 @@ async function doCreateIntegration(){
   document.getElementById('integWizardStep2').style.display='';
 }
 
+let _oauthState='';
 async function doOAuthConnect(){
   const r=await api(`/integrations/${_currentIntegId}/auth-url`).then(r=>r.json()).catch(()=>null);
   if(!r||!r.auth_url){document.getElementById('integOAuthErr').textContent='Failed to get auth URL';return}
+  _oauthState=r.state||'';
   // Open Google OAuth in new tab, user copies the code back
   window.open(r.auth_url,'_blank');
   document.getElementById('integWizardStep2').style.display='none';
@@ -1154,8 +1156,8 @@ async function doOAuthConnect(){
 async function doExchangeCode(){
   const code=document.getElementById('integAuthCode').value.trim();
   if(!code){document.getElementById('integCodeErr').textContent='Paste the code from Google';return}
-  const r=await api(`/integrations/${_currentIntegId}/callback`,{method:'POST',body:JSON.stringify({code:code})});
-  if(r.ok){closeModal('addIntegrationModal');loadIntegrations()}
+  const r=await api(`/integrations/${_currentIntegId}/callback`,{method:'POST',body:JSON.stringify({code:code,state:_oauthState})});
+  if(r.ok){_oauthState='';closeModal('addIntegrationModal');loadIntegrations()}
   else{const e=await r.json();document.getElementById('integCodeErr').textContent=e.detail||'Failed'}
 }
 

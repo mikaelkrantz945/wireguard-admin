@@ -193,7 +193,25 @@ class PortalLoginRequest(BaseModel):
 class GoogleLoginRequest(BaseModel):
     integration_id: int
     code: str
-    redirect_uri: str
+    redirect_uri: str = ""  # Accepted for backwards compat but validated against allowlist
+
+
+# Allowed redirect URI patterns for portal Google OAuth.
+# The actual redirect_uri is validated against BASE_URL to prevent open redirect attacks.
+def _validate_portal_redirect_uri(redirect_uri: str) -> str:
+    """Validate and return a safe redirect_uri for portal Google OAuth.
+
+    Only allows redirect URIs under the configured BASE_URL.
+    If the provided URI is empty or invalid, returns the canonical portal OAuth URI.
+    """
+    canonical = BASE_URL.rstrip("/") + "/portal/ui"
+    if not redirect_uri:
+        return canonical
+    # Only allow URIs that start with our BASE_URL
+    base = BASE_URL.rstrip("/")
+    if not redirect_uri.startswith(base + "/") and redirect_uri != base:
+        return canonical
+    return redirect_uri
 
 
 @router.post("/auth/login")
@@ -231,13 +249,16 @@ async def portal_google_login(req: GoogleLoginRequest):
 
     config = json.loads(integ["config"]) if integ["config"] else {}
 
+    # Validate redirect_uri against allowlist — never pass arbitrary URIs to Google
+    safe_redirect_uri = _validate_portal_redirect_uri(req.redirect_uri)
+
     try:
         token_resp = httpx.post("https://oauth2.googleapis.com/token", data={
             "client_id": config["client_id"],
             "client_secret": config["client_secret"],
             "code": req.code,
             "grant_type": "authorization_code",
-            "redirect_uri": req.redirect_uri,
+            "redirect_uri": safe_redirect_uri,
         })
         token_resp.raise_for_status()
         access_token = token_resp.json()["access_token"]
@@ -254,6 +275,11 @@ async def portal_google_login(req: GoogleLoginRequest):
     email = userinfo.get("email", "")
     if not email:
         raise HTTPException(400, "Could not get email from Google")
+
+    # Validate that the email belongs to the configured domain (if set)
+    domain = config.get("domain", "")
+    if domain and not email.lower().endswith("@" + domain.lower()):
+        raise HTTPException(403, f"Email domain not allowed. Expected @{domain}")
 
     peer = db.fetchone("SELECT * FROM wg_peers WHERE portal_email = %s", (email,))
     if not peer:
@@ -329,7 +355,10 @@ async def portal_qr(peer: dict = Security(_require_portal_user)):
 
 @router.get("/google-enabled")
 async def google_enabled():
-    """Check if any Google integration is available for portal login."""
+    """Check if any Google integration is available for portal login.
+
+    Only exposes client_id (which is public) — never client_secret or tokens.
+    """
     integ = db.fetchone("SELECT id, name, config FROM integrations WHERE provider = 'google_workspace' AND status = 'connected' LIMIT 1")
     if not integ:
         return {"enabled": False}
@@ -338,4 +367,6 @@ async def google_enabled():
         "enabled": True,
         "integration_id": integ["id"],
         "client_id": config.get("client_id", ""),
+        # Note: client_id is intentionally public — needed for OAuth redirect on frontend.
+        # client_secret and tokens are NEVER returned in this response.
     }

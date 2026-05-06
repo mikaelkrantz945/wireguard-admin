@@ -1,34 +1,44 @@
 # 02 — Integrations Module Full Review
 
-**Status:** Open
+**Status:** Fixed
 **Priority:** High
 **Area:** Authentication, OAuth, User Provisioning
 
-## Summary
+## Confirmed Findings (7 issues, all fixed)
 
-The integrations module (`app/integrations/`) handles OAuth2 flows with Google Workspace and user provisioning. This module is completely unreviewed and touches sensitive credentials (client_secret, access tokens) and user creation.
+### 2.1 — Missing OAuth state parameter (CRITICAL)
+- No CSRF protection on OAuth flow
+- **Fix:** Added `secrets.token_urlsafe(32)` state token, stored server-side, validated on callback (one-time use)
 
-## Key Questions
+### 2.2 — Frontend not passing state back (CRITICAL)
+- admin.html `doExchangeCode()` only sent `{code}`, not `{code, state}`
+- **Fix:** Added `_oauthState` variable, saved from auth-url response, sent in callback POST
 
-- [ ] Are OAuth client_secret values stored securely (encrypted at rest)?
-- [ ] Is the OAuth state parameter validated to prevent CSRF?
-- [ ] Are access/refresh tokens stored securely?
-- [ ] Can a non-admin trigger the OAuth flow or import users?
-- [ ] Is the redirect_uri validated against an allowlist?
-- [ ] Are imported users properly validated before peer creation?
-- [ ] Can token refresh be exploited for persistent access?
+### 2.3 — Unvalidated redirect_uri in portal Google login (HIGH)
+- `POST /portal/auth/google` accepted arbitrary redirect_uri
+- **Fix:** Added `_validate_portal_redirect_uri()` — only allows URIs starting with `BASE_URL`
 
-## Files to Review
+### 2.4 — No email domain validation in portal Google login (MEDIUM)
+- Any Google account could attempt login, not just configured workspace domain
+- **Fix:** Email must end with `@{domain}` when integration has domain configured
 
-- `app/integrations/routes.py`
-- `app/integrations/google_workspace.py`
-- `app/integrations/base.py`
-- `app/portal.py` (Google OAuth login)
+### 2.5 — No email format validation on user import (MEDIUM)
+- Import accepted arbitrary email values
+- **Fix:** Added `_validate_email()` regex check, invalid emails skipped
 
-## Findings
+### 2.6 — Redirect URI consistency (LOW)
+- **Fix:** Extracted `_build_redirect_uri()` helper used in both auth-url and callback
 
-<!-- Document results here -->
+### 2.7 — Secret masking utility (IMPROVEMENT)
+- **Fix:** Added `_mask_secret()` / `_mask_config()` for safe config display
 
-## Remediation
+## Verified as Secure
 
-<!-- Document fixes here -->
+- All integration endpoints require admin auth (`Depends(_require_admin)`)
+- Tokens not exposed in list/create responses (only id, provider, name, status)
+- `client_id` exposure in `/portal/google-enabled` is intentional (public, needed by frontend)
+- Token refresh handled properly in `_ensure_valid_token()`
+
+## Follow-up (not in scope)
+
+- Encrypt `client_secret` and OAuth tokens at rest (requires key management strategy)

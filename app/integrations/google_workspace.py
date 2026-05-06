@@ -22,7 +22,7 @@ class GoogleWorkspaceProvider(BaseProvider):
     TOKEN_URL = "https://oauth2.googleapis.com/token"
     USERS_URL = "https://admin.googleapis.com/admin/directory/v1/users"
 
-    def get_auth_url(self, config: dict, redirect_uri: str) -> str:
+    def get_auth_url(self, config: dict, redirect_uri: str, state: str = "") -> str:
         params = {
             "client_id": config["client_id"],
             "redirect_uri": redirect_uri,
@@ -31,6 +31,8 @@ class GoogleWorkspaceProvider(BaseProvider):
             "access_type": "offline",
             "prompt": "consent",
         }
+        if state:
+            params["state"] = state
         return f"{self.AUTH_URL}?{urllib.parse.urlencode(params)}"
 
     def exchange_code(self, config: dict, code: str, redirect_uri: str) -> dict:

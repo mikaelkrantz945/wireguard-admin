@@ -7,7 +7,7 @@ Security analysis of the wireguard-admin project. Findings, remediation tracking
 | # | Area | Status | Priority |
 |---|------|--------|----------|
 | 1 | [Network exposure](findings/01-network-exposure.md) | **Fixed** | Critical |
-| 2 | [Integrations module](findings/02-integrations-review.md) | Open | High |
+| 2 | [Integrations module](findings/02-integrations-review.md) | **Fixed** | High |
 | 3 | [XSS audit (admin.html)](findings/03-portal-xss.md) | **Fixed** | Critical |
 | 4 | [Deployment secrets](findings/04-deployment-secrets.md) | **Fixed** | Medium |
 | 5 | [Admin privilege separation](findings/05-admin-privileges.md) | **Fixed** | Medium |

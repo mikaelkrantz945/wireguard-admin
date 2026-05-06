@@ -28,6 +28,15 @@ Security analysis of the wireguard-admin project. Findings, remediation tracking
 | Low | Hardening recommendations, best practices |
 | Info | Observations, no immediate risk |
 
+## Verification
+
+All fixes deployed and tested on vpndev.no-ack.net (2026-05-06).
+See [VERIFICATION.md](VERIFICATION.md) for full test results.
+
+- **16/16 automated tests passed**
+- **5/5 password module tests passed**
+- PR #37: all fixes merged to main
+
 ## Process
 
 1. Document finding in `findings/` with evidence

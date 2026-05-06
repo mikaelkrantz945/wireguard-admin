@@ -190,7 +190,15 @@ let PEER=JSON.parse(sessionStorage.getItem('ppeer')||'null');
     if(b.logo_url){
       ['portalLoginLogo','portalHeaderLogo'].forEach(id=>{
         const el=document.getElementById(id);
-        if(el){el.src=b.logo_url;el.style.display='inline-block'}
+        if(el){
+          el.src=b.logo_url;
+          el.style.display='inline-block';
+          if(b.logo_style==='light'){
+            el.style.background='#fff';
+            el.style.padding='4px 8px';
+            el.style.borderRadius='6px';
+          }
+        }
       });
     }
   }catch(e){}

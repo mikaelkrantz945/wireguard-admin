@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import verify_wireguard
+from ..password import hash_password
 from .. import db
 from . import manager, ipam, peers, status, acl, groups
 
@@ -261,11 +262,10 @@ async def create_peer(iface_id: int, req: CreatePeerRequest):
         )
         # Set portal credentials if provided
         if req.portal_email:
-            import hashlib
             updates = ["portal_email = %s"]
             params = [req.portal_email]
             if req.portal_password:
-                params.append(hashlib.sha256(f"wgportal:{req.portal_password}".encode()).hexdigest())
+                params.append(hash_password(req.portal_password))
                 updates.append("portal_password_hash = %s")
             params.append(result["peer"]["id"])
             db.execute(f"UPDATE wg_peers SET {', '.join(updates)} WHERE id = %s", tuple(params))
@@ -287,14 +287,13 @@ async def update_peer(peer_id: int, req: UpdatePeerRequest):
     try:
         result = peers.update_peer(peer_id, req.name, req.note, req.dns, req.persistent_keepalive, req.acl_profile_id, req.group_id)
         if req.portal_email is not None or req.portal_password is not None:
-            import hashlib
             updates, params = [], []
             if req.portal_email is not None:
                 updates.append("portal_email = %s")
                 params.append(req.portal_email)
             if req.portal_password is not None and req.portal_password:
                 updates.append("portal_password_hash = %s")
-                params.append(hashlib.sha256(f"wgportal:{req.portal_password}".encode()).hexdigest())
+                params.append(hash_password(req.portal_password))
             if updates:
                 params.append(peer_id)
                 db.execute(f"UPDATE wg_peers SET {', '.join(updates)} WHERE id = %s", tuple(params))

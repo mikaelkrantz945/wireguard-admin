@@ -5,15 +5,17 @@ import json
 import os
 import secrets
 import smtplib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 
 import httpx
-from fastapi import APIRouter, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 from . import db
+from .admin import _require_admin
+from .password import hash_password as _hash_portal_password, verify_password
 from .wireguard import peers as peer_ops, acl
 
 router = APIRouter(prefix="/portal", tags=["Portal"])
@@ -35,9 +37,10 @@ def _hash(s: str) -> str:
 def send_activation_email(peer_id: int, email: str, name: str, method: str = "password"):
     """Generate activation token and send email."""
     token = secrets.token_urlsafe(48)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     db.execute(
-        "UPDATE wg_peers SET activation_token = %s, activation_method = %s, portal_email = %s, activated = FALSE, enabled = FALSE WHERE id = %s",
-        (_hash(token), method, email, peer_id),
+        "UPDATE wg_peers SET activation_token = %s, activation_method = %s, portal_email = %s, activation_expires_at = %s WHERE id = %s",
+        (_hash(token), method, email, expires_at, peer_id),
     )
     if method == "google":
         activate_url = f"{BASE_URL}/portal/ui#activate={token}&method=google"
@@ -131,12 +134,14 @@ async def activate_with_password(req: ActivatePasswordRequest):
         )
     if not peer:
         raise HTTPException(400, "Invalid or expired activation link")
+    if peer.get("activation_expires_at") and datetime.now(timezone.utc) > peer["activation_expires_at"]:
+        raise HTTPException(400, "Activation link has expired")
     if len(req.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
 
     db.execute(
         "UPDATE wg_peers SET portal_password_hash = %s, activated = TRUE, enabled = TRUE, activation_token = '' WHERE id = %s",
-        (_hash(req.password), peer["id"]),
+        (_hash_portal_password(req.password), peer["id"]),
     )
 
     # Apply WG config since peer is now enabled
@@ -160,6 +165,8 @@ async def activate_with_google(req: ActivateGoogleRequest):
     )
     if not peer:
         raise HTTPException(400, "Invalid or expired activation link")
+    if peer.get("activation_expires_at") and datetime.now(timezone.utc) > peer["activation_expires_at"]:
+        raise HTTPException(400, "Activation link has expired")
 
     db.execute(
         "UPDATE wg_peers SET activated = TRUE, enabled = TRUE, activation_token = '' WHERE id = %s",
@@ -186,7 +193,25 @@ class PortalLoginRequest(BaseModel):
 class GoogleLoginRequest(BaseModel):
     integration_id: int
     code: str
-    redirect_uri: str
+    redirect_uri: str = ""  # Accepted for backwards compat but validated against allowlist
+
+
+# Allowed redirect URI patterns for portal Google OAuth.
+# The actual redirect_uri is validated against BASE_URL to prevent open redirect attacks.
+def _validate_portal_redirect_uri(redirect_uri: str) -> str:
+    """Validate and return a safe redirect_uri for portal Google OAuth.
+
+    Only allows redirect URIs under the configured BASE_URL.
+    If the provided URI is empty or invalid, returns the canonical portal OAuth URI.
+    """
+    canonical = BASE_URL.rstrip("/") + "/portal/ui"
+    if not redirect_uri:
+        return canonical
+    # Only allow URIs that start with our BASE_URL
+    base = BASE_URL.rstrip("/")
+    if not redirect_uri.startswith(base + "/") and redirect_uri != base:
+        return canonical
+    return redirect_uri
 
 
 @router.post("/auth/login")
@@ -196,8 +221,13 @@ async def portal_login(req: PortalLoginRequest):
         "SELECT * FROM wg_peers WHERE portal_email = %s AND portal_password_hash != ''",
         (req.email,),
     )
-    if not peer or peer["portal_password_hash"] != _hash(req.password):
+    if not peer:
         raise HTTPException(401, "Invalid email or password")
+    ok, needs_rehash = verify_password(req.password, peer["portal_password_hash"])
+    if not ok:
+        raise HTTPException(401, "Invalid email or password")
+    if needs_rehash:
+        db.execute("UPDATE wg_peers SET portal_password_hash = %s WHERE id = %s", (_hash_portal_password(req.password), peer["id"]))
     if not peer.get("activated"):
         raise HTTPException(403, "Account not yet activated. Check your email for the activation link.")
     if not peer["enabled"]:
@@ -219,13 +249,16 @@ async def portal_google_login(req: GoogleLoginRequest):
 
     config = json.loads(integ["config"]) if integ["config"] else {}
 
+    # Validate redirect_uri against allowlist — never pass arbitrary URIs to Google
+    safe_redirect_uri = _validate_portal_redirect_uri(req.redirect_uri)
+
     try:
         token_resp = httpx.post("https://oauth2.googleapis.com/token", data={
             "client_id": config["client_id"],
             "client_secret": config["client_secret"],
             "code": req.code,
             "grant_type": "authorization_code",
-            "redirect_uri": req.redirect_uri,
+            "redirect_uri": safe_redirect_uri,
         })
         token_resp.raise_for_status()
         access_token = token_resp.json()["access_token"]
@@ -242,6 +275,11 @@ async def portal_google_login(req: GoogleLoginRequest):
     email = userinfo.get("email", "")
     if not email:
         raise HTTPException(400, "Could not get email from Google")
+
+    # Validate that the email belongs to the configured domain (if set)
+    domain = config.get("domain", "")
+    if domain and not email.lower().endswith("@" + domain.lower()):
+        raise HTTPException(403, f"Email domain not allowed. Expected @{domain}")
 
     peer = db.fetchone("SELECT * FROM wg_peers WHERE portal_email = %s", (email,))
     if not peer:
@@ -274,10 +312,9 @@ class SendActivationRequest(BaseModel):
     method: str = "password"  # "password" or "google"
 
 
-@router.post("/send-activation")
+@router.post("/send-activation", dependencies=[Depends(_require_admin)])
 async def send_activation(req: SendActivationRequest):
     """Admin endpoint: send activation email to a peer."""
-    from .admin import _require_admin
     peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (req.peer_id,))
     if not peer:
         raise HTTPException(404, "Peer not found")
@@ -318,7 +355,10 @@ async def portal_qr(peer: dict = Security(_require_portal_user)):
 
 @router.get("/google-enabled")
 async def google_enabled():
-    """Check if any Google integration is available for portal login."""
+    """Check if any Google integration is available for portal login.
+
+    Only exposes client_id (which is public) — never client_secret or tokens.
+    """
     integ = db.fetchone("SELECT id, name, config FROM integrations WHERE provider = 'google_workspace' AND status = 'connected' LIMIT 1")
     if not integ:
         return {"enabled": False}
@@ -327,4 +367,6 @@ async def google_enabled():
         "enabled": True,
         "integration_id": integ["id"],
         "client_id": config.get("client_id", ""),
+        # Note: client_id is intentionally public — needed for OAuth redirect on frontend.
+        # client_secret and tokens are NEVER returned in this response.
     }

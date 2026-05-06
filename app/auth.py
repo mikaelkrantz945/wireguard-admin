@@ -4,6 +4,7 @@ from fastapi import HTTPException, Security, Request
 from fastapi.security import APIKeyHeader
 
 from . import keystore, users
+from .utils import get_client_ip
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -16,9 +17,12 @@ def _verify_scope(scope: str):
         # Check if it's a user session (admin GUI)
         user = users.verify_session(token)
         if user:
-            return {"customer": f"{user['firstname']} {user['lastname']}", "scope": "admin", "key_prefix": "session"}
+            # Only admin-role users may access API-scoped endpoints via session
+            if user["role"] != "admin":
+                raise HTTPException(403, "Admin role required for API access")
+            return {"customer": f"{user['firstname']} {user['lastname']}", "scope": "admin", "key_prefix": "session", "role": user["role"]}
         # Check API key with client IP
-        client_ip = request.headers.get("x-real-ip", "") or (request.client.host if request.client else "")
+        client_ip = get_client_ip(request)
         info = keystore.verify_key(token, required_scope=scope, client_ip=client_ip)
         if not info:
             raise HTTPException(401, "Invalid API key or insufficient scope")

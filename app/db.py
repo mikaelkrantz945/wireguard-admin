@@ -257,6 +257,12 @@ def init_schema():
             """)
             cur.execute("""
                 DO $$ BEGIN
+                    ALTER TABLE wg_peers ADD COLUMN activation_expires_at TIMESTAMPTZ DEFAULT NULL;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+            cur.execute("""
+                DO $$ BEGIN
                     ALTER TABLE wg_interfaces ADD COLUMN require_2fa BOOLEAN DEFAULT TRUE;
                 EXCEPTION WHEN duplicate_column THEN NULL;
                 END $$

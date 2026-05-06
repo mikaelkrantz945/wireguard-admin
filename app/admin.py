@@ -175,6 +175,7 @@ async def invite_user(req: InviteRequest):
                 name=name,
                 note=req.email,
                 group_id=req.group_id,
+                enabled=False,
             )
             peer_id = result["peer"]["id"]
             send_activation_email(peer_id, req.email, name, req.activation_method)
@@ -197,16 +198,22 @@ async def invite_user(req: InviteRequest):
 
 
 @router.put("/users/{user_id}", dependencies=[Depends(_require_admin)])
-async def update_user(user_id: int, req: UpdateUserRequest):
+async def update_user(user_id: int, req: UpdateUserRequest, current_user: dict = Depends(_require_admin)):
     if req.role and req.role not in ("readonly", "admin"):
         raise HTTPException(400, "Role must be 'readonly' or 'admin'")
+    # Prevent admin from demoting or deactivating themselves
+    if user_id == current_user["id"]:
+        if req.role and req.role != "admin":
+            raise HTTPException(400, "Cannot demote yourself — ask another admin")
+        if req.active is not None and not req.active:
+            raise HTTPException(400, "Cannot deactivate yourself — ask another admin")
     if users.update_user(user_id, req.role, req.active):
         return {"updated": user_id}
     raise HTTPException(404, "User not found")
 
 
 @router.delete("/users/{user_id}", dependencies=[Depends(_require_admin)])
-async def delete_user(user_id: str):
+async def delete_user(user_id: str, current_user: dict = Depends(_require_admin)):
     # Handle VPN peer deletion (id format: "vpn-123")
     if str(user_id).startswith("vpn-"):
         peer_id = int(str(user_id).split("-", 1)[1])
@@ -216,6 +223,9 @@ async def delete_user(user_id: str):
             return {"deleted": user_id}
         except ValueError:
             raise HTTPException(404, "VPN peer not found")
+    # Prevent admin from deleting themselves
+    if int(user_id) == current_user["id"]:
+        raise HTTPException(400, "Cannot delete yourself — ask another admin")
     if users.delete_user(int(user_id)):
         return {"deleted": user_id}
     raise HTTPException(404, "User not found")

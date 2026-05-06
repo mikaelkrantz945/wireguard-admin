@@ -1,6 +1,8 @@
 """Integration endpoints — provider management, OAuth, user sync, import."""
 
 import json
+import re
+import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -31,6 +33,36 @@ def _parse_json(text: str) -> dict:
         return json.loads(text) if text else {}
     except json.JSONDecodeError:
         return {}
+
+
+def _mask_secret(value: str) -> str:
+    """Mask a secret, showing only the last 4 characters."""
+    if not value or len(value) <= 4:
+        return "****"
+    return "*" * (len(value) - 4) + value[-4:]
+
+
+def _mask_config(config: dict) -> dict:
+    """Return config with sensitive fields masked."""
+    masked = dict(config)
+    if "client_secret" in masked:
+        masked["client_secret"] = _mask_secret(masked["client_secret"])
+    return masked
+
+
+def _build_redirect_uri(request: Request, integration_id: int) -> str:
+    """Build the canonical OAuth redirect URI from the request base URL."""
+    return str(request.base_url).rstrip("/") + f"/integrations/{integration_id}/callback"
+
+
+# In-memory store for OAuth state tokens (maps state -> integration_id).
+# In a multi-process deployment, move this to the database or Redis.
+_oauth_states: dict[str, int] = {}
+
+
+def _validate_email(email: str) -> bool:
+    """Basic email format validation."""
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email))
 
 
 # -- CRUD --
@@ -102,9 +134,14 @@ async def get_auth_url(integration_id: int, request: Request):
     if not provider:
         raise HTTPException(400, "Unknown provider")
     config = _parse_json(integ["config"])
-    redirect_uri = str(request.base_url).rstrip("/") + f"/integrations/{integration_id}/callback"
-    url = provider.get_auth_url(config, redirect_uri)
-    return {"auth_url": url, "redirect_uri": redirect_uri}
+    redirect_uri = _build_redirect_uri(request, integration_id)
+
+    # Generate CSRF state token for OAuth flow
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = integration_id
+
+    url = provider.get_auth_url(config, redirect_uri, state=state)
+    return {"auth_url": url, "redirect_uri": redirect_uri, "state": state}
 
 
 @router.post("/{integration_id}/callback", dependencies=[Depends(_require_admin)])
@@ -120,7 +157,16 @@ async def oauth_callback(integration_id: int, request: Request):
     if not code:
         raise HTTPException(400, "Missing auth code")
 
-    redirect_uri = str(request.base_url).rstrip("/") + f"/integrations/{integration_id}/callback"
+    # Validate OAuth state parameter to prevent CSRF
+    state = body.get("state", "")
+    if not state or state not in _oauth_states:
+        raise HTTPException(400, "Invalid or missing OAuth state parameter")
+    expected_integration_id = _oauth_states.pop(state)
+    if expected_integration_id != integration_id:
+        raise HTTPException(400, "OAuth state does not match integration")
+
+    # Always use canonical redirect_uri — never accept it from the client
+    redirect_uri = _build_redirect_uri(request, integration_id)
     try:
         tokens = provider.exchange_code(config, code, redirect_uri)
     except Exception as e:
@@ -184,8 +230,13 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
 
     results = []
     for user in req.users:
-        email = user.get("email", "")
+        email = user.get("email", "").strip()
         name = f"{user.get('firstname', '')} {user.get('lastname', '')}".strip() or email
+
+        # Validate email format
+        if not email or not _validate_email(email):
+            results.append({"email": email, "status": "skipped", "reason": "invalid email format"})
+            continue
 
         # Skip if already imported
         existing = db.fetchone("SELECT id FROM wg_peers WHERE note = %s OR portal_email = %s", (email, email))
@@ -199,6 +250,7 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
                 name=name,
                 note=email,
                 group_id=req.group_id,
+                enabled=False,
             )
             peer_id = result["peer"]["id"]
             # Peer created as disabled — send activation email

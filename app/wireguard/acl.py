@@ -185,9 +185,7 @@ def apply_firewall_rules(interface_name: str = "wg0"):
 
     for peer in peers:
         peer_ip = peer["allowed_ips"].split("/")[0]
-        profile = None
-        if peer["acl_profile_id"]:
-            profile = get_profile(peer["acl_profile_id"])
+        profile = get_profile_for_peer(peer["id"])
 
         if not profile or not profile.get("fw_rules", "").strip():
             # No restrictions — traffic passes through to normal FORWARD rules

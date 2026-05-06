@@ -6,8 +6,8 @@ class BaseProvider:
     display_name: str = ""
     config_fields: list[dict] = []  # [{name, label, placeholder, type}]
 
-    def get_auth_url(self, config: dict, redirect_uri: str) -> str:
-        """Return the OAuth authorization URL."""
+    def get_auth_url(self, config: dict, redirect_uri: str, state: str = "") -> str:
+        """Return the OAuth authorization URL. Must include state parameter for CSRF protection."""
         raise NotImplementedError
 
     def exchange_code(self, config: dict, code: str, redirect_uri: str) -> dict:

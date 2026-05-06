@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -91,9 +91,9 @@ async def bootstrap(req: BootstrapRequest):
     """Create the first admin user. Only works when no users exist."""
     existing = users.list_users()
     if existing:
-        return {"error": "Users already exist. Use /admin/ui to manage."}
+        raise HTTPException(403, "Already bootstrapped — users exist")
     if len(req.password) < 8:
-        return {"error": "Password must be at least 8 characters"}
+        raise HTTPException(400, "Password must be at least 8 characters")
     now = datetime.utcnow().isoformat()
     db.execute(
         "INSERT INTO users (firstname, lastname, email, password_hash, role, active, must_change_password, created, accepted) VALUES (%s,%s,%s,%s,'admin',TRUE,TRUE,%s,%s)",

@@ -5,7 +5,7 @@ import json
 import os
 import secrets
 import smtplib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 
 import httpx
@@ -37,9 +37,10 @@ def _hash(s: str) -> str:
 def send_activation_email(peer_id: int, email: str, name: str, method: str = "password"):
     """Generate activation token and send email."""
     token = secrets.token_urlsafe(48)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     db.execute(
-        "UPDATE wg_peers SET activation_token = %s, activation_method = %s, portal_email = %s WHERE id = %s",
-        (_hash(token), method, email, peer_id),
+        "UPDATE wg_peers SET activation_token = %s, activation_method = %s, portal_email = %s, activation_expires_at = %s WHERE id = %s",
+        (_hash(token), method, email, expires_at, peer_id),
     )
     if method == "google":
         activate_url = f"{BASE_URL}/portal/ui#activate={token}&method=google"
@@ -133,6 +134,8 @@ async def activate_with_password(req: ActivatePasswordRequest):
         )
     if not peer:
         raise HTTPException(400, "Invalid or expired activation link")
+    if peer.get("activation_expires_at") and datetime.now(timezone.utc) > peer["activation_expires_at"]:
+        raise HTTPException(400, "Activation link has expired")
     if len(req.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
 
@@ -162,6 +165,8 @@ async def activate_with_google(req: ActivateGoogleRequest):
     )
     if not peer:
         raise HTTPException(400, "Invalid or expired activation link")
+    if peer.get("activation_expires_at") and datetime.now(timezone.utc) > peer["activation_expires_at"]:
+        raise HTTPException(400, "Activation link has expired")
 
     db.execute(
         "UPDATE wg_peers SET activated = TRUE, enabled = TRUE, activation_token = '' WHERE id = %s",

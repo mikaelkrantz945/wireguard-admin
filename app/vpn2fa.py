@@ -76,8 +76,15 @@ def verify_and_auth(peer_ip: str, code: str) -> dict:
     expires = (datetime.utcnow() + timedelta(hours=_session_hours())).isoformat()
     ip = peer["allowed_ips"].split("/")[0]
 
+    # Resolve the interface this peer belongs to
+    iface_row = db.fetchone(
+        "SELECT i.name FROM wg_interfaces i JOIN wg_peers p ON p.interface_id = i.id WHERE p.id = %s",
+        (peer["id"],),
+    )
+    iface_name = iface_row["name"] if iface_row else "wg0"
+
     # Get current endpoint for reconnect detection
-    endpoint = _get_peer_endpoint(ip)
+    endpoint = _get_peer_endpoint(ip, iface_name)
 
     # Remove old sessions for this peer
     db.execute("DELETE FROM vpn_auth_sessions WHERE peer_id = %s", (peer["id"],))
@@ -87,7 +94,7 @@ def verify_and_auth(peer_ip: str, code: str) -> dict:
     )
 
     # Open iptables for this peer (add ACCEPT, don't flush chain)
-    _open_peer(ip)
+    _open_peer(ip, iface_name)
 
     # Schedule NAT rebuild + conntrack flush in background (after response is sent)
     import threading
@@ -132,30 +139,32 @@ def get_peer_by_ip(peer_ip: str) -> dict | None:
 
 # -- iptables management --
 
-def _open_peer(peer_ip: str):
-    """Add iptables ACCEPT rule for authenticated peer in WG_2FA chain."""
+def _open_peer(peer_ip: str, interface_name: str = "wg0"):
+    """Add iptables ACCEPT rule for authenticated peer in interface-scoped WG_2FA chain."""
+    chain = f"WG_2FA_{interface_name}"
     # Ensure chain exists
-    subprocess.run(["iptables", "-N", "WG_2FA"], capture_output=True)
+    subprocess.run(["iptables", "-N", chain], capture_output=True)
     # Remove existing rules for this IP (avoid duplicates)
     while True:
         result = subprocess.run(
-            ["iptables", "-D", "WG_2FA", "-s", peer_ip, "-j", "ACCEPT"],
+            ["iptables", "-D", chain, "-s", peer_ip, "-j", "ACCEPT"],
             capture_output=True,
         )
         if result.returncode != 0:
             break
     # Add ACCEPT
     subprocess.run(
-        ["iptables", "-I", "WG_2FA", "-s", peer_ip, "-j", "ACCEPT"],
+        ["iptables", "-I", chain, "-s", peer_ip, "-j", "ACCEPT"],
         capture_output=True,
     )
 
 
-def _block_peer(peer_ip: str):
-    """Remove iptables ACCEPT rule for peer."""
+def _block_peer(peer_ip: str, interface_name: str = "wg0"):
+    """Remove iptables ACCEPT rule for peer from interface-scoped WG_2FA chain."""
+    chain = f"WG_2FA_{interface_name}"
     while True:
         result = subprocess.run(
-            ["iptables", "-D", "WG_2FA", "-s", peer_ip, "-j", "ACCEPT"],
+            ["iptables", "-D", chain, "-s", peer_ip, "-j", "ACCEPT"],
             capture_output=True,
         )
         if result.returncode != 0:
@@ -170,19 +179,20 @@ def apply_2fa_rules(interface_name: str = "wg0"):
     - Peers WITH require_2fa + active session: ACCEPT
     - Peers WITH require_2fa + no session: allow only access to VPN server, DROP rest
     """
+    chain = f"WG_2FA_{interface_name}"
     # Ensure chain exists
-    subprocess.run(["iptables", "-N", "WG_2FA"], capture_output=True)
-    # Flush
-    subprocess.run(["iptables", "-F", "WG_2FA"], capture_output=True, check=True)
+    subprocess.run(["iptables", "-N", chain], capture_output=True)
+    # Flush only this interface's chain
+    subprocess.run(["iptables", "-F", chain], capture_output=True, check=True)
 
     # Ensure jump from FORWARD before WG_ACL
     check = subprocess.run(
-        ["iptables", "-C", "FORWARD", "-i", interface_name, "-j", "WG_2FA"],
+        ["iptables", "-C", "FORWARD", "-i", interface_name, "-j", chain],
         capture_output=True,
     )
     if check.returncode != 0:
         subprocess.run(
-            ["iptables", "-I", "FORWARD", "1", "-i", interface_name, "-j", "WG_2FA"],
+            ["iptables", "-I", "FORWARD", "1", "-i", interface_name, "-j", chain],
             capture_output=True, check=True,
         )
 
@@ -192,11 +202,13 @@ def apply_2fa_rules(interface_name: str = "wg0"):
         # Interface has 2FA disabled — no rules needed
         return
 
-    # Get 2FA-required peers on interfaces with 2FA enabled
+    # Get 2FA-required peers on this specific interface
     peers_2fa = db.fetchall(
         """SELECT p.* FROM wg_peers p
            JOIN wg_interfaces i ON p.interface_id = i.id
-           WHERE p.require_2fa = TRUE AND p.enabled = TRUE AND i.require_2fa = TRUE"""
+           WHERE p.require_2fa = TRUE AND p.enabled = TRUE AND i.require_2fa = TRUE
+             AND i.name = %s""",
+        (interface_name,),
     )
     if not peers_2fa:
         return
@@ -216,34 +228,34 @@ def apply_2fa_rules(interface_name: str = "wg0"):
         if peer_ip in active_ips:
             # Authenticated — ACCEPT all traffic
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-j", "ACCEPT"],
+                ["iptables", "-A", chain, "-s", peer_ip, "-j", "ACCEPT"],
                 capture_output=True,
             )
         else:
             unauth_ips.append(peer_ip)
             # Allow traffic to VPN server IP (for captive portal)
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-d", server_ip, "-j", "ACCEPT"],
+                ["iptables", "-A", chain, "-s", peer_ip, "-d", server_ip, "-j", "ACCEPT"],
                 capture_output=True,
             )
             # Allow DNS (so browser can resolve, then gets redirected)
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "udp", "--dport", "53", "-j", "ACCEPT"],
+                ["iptables", "-A", chain, "-s", peer_ip, "-p", "udp", "--dport", "53", "-j", "ACCEPT"],
                 capture_output=True,
             )
             # Allow HTTP outbound (will be NAT-redirected to captive portal)
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
+                ["iptables", "-A", chain, "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
                 capture_output=True,
             )
             # Allow HTTPS outbound (will be NAT-redirected to nginx with SSL)
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-p", "tcp", "--dport", "443", "-j", "ACCEPT"],
+                ["iptables", "-A", chain, "-s", peer_ip, "-p", "tcp", "--dport", "443", "-j", "ACCEPT"],
                 capture_output=True,
             )
             # REJECT everything else (fast fail, not timeout)
             subprocess.run(
-                ["iptables", "-A", "WG_2FA", "-s", peer_ip, "-j", "REJECT", "--reject-with", "icmp-port-unreachable"],
+                ["iptables", "-A", chain, "-s", peer_ip, "-j", "REJECT", "--reject-with", "icmp-port-unreachable"],
                 capture_output=True,
             )
 
@@ -254,18 +266,19 @@ def apply_2fa_rules(interface_name: str = "wg0"):
 
 def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], interface_name: str):
     """NAT redirect all HTTP from unauthenticated peers to captive portal."""
-    # Ensure WG_2FA_NAT chain exists in nat table
-    subprocess.run(["iptables", "-t", "nat", "-N", "WG_2FA_NAT"], capture_output=True)
-    subprocess.run(["iptables", "-t", "nat", "-F", "WG_2FA_NAT"], capture_output=True)
+    nat_chain = f"WG_2FA_NAT_{interface_name}"
+    # Ensure interface-scoped NAT chain exists in nat table
+    subprocess.run(["iptables", "-t", "nat", "-N", nat_chain], capture_output=True)
+    subprocess.run(["iptables", "-t", "nat", "-F", nat_chain], capture_output=True)
 
     # Ensure jump from PREROUTING
     check = subprocess.run(
-        ["iptables", "-t", "nat", "-C", "PREROUTING", "-i", interface_name, "-j", "WG_2FA_NAT"],
+        ["iptables", "-t", "nat", "-C", "PREROUTING", "-i", interface_name, "-j", nat_chain],
         capture_output=True,
     )
     if check.returncode != 0:
         subprocess.run(
-            ["iptables", "-t", "nat", "-I", "PREROUTING", "1", "-i", interface_name, "-j", "WG_2FA_NAT"],
+            ["iptables", "-t", "nat", "-I", "PREROUTING", "1", "-i", interface_name, "-j", nat_chain],
             capture_output=True,
         )
 
@@ -273,13 +286,13 @@ def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], in
     # EXCLUDE traffic already going to VPN server (captive portal API calls)
     for peer_ip in unauth_ips:
         subprocess.run(
-            ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
+            ["iptables", "-t", "nat", "-A", nat_chain, "-s", peer_ip,
              "!", "-d", server_ip, "-p", "tcp", "--dport", "80",
              "-j", "DNAT", "--to-destination", f"{server_ip}:{api_port}"],
             capture_output=True,
         )
         subprocess.run(
-            ["iptables", "-t", "nat", "-A", "WG_2FA_NAT", "-s", peer_ip,
+            ["iptables", "-t", "nat", "-A", nat_chain, "-s", peer_ip,
              "!", "-d", server_ip, "-p", "tcp", "--dport", "443",
              "-j", "DNAT", "--to-destination", f"{server_ip}:443"],
             capture_output=True,
@@ -297,10 +310,21 @@ def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], in
         )
 
 
-def _get_peer_endpoint(peer_ip: str) -> str:
+def _resolve_interface_for_ip(peer_ip: str) -> str:
+    """Look up which WireGuard interface a peer IP belongs to."""
+    ip = peer_ip if "/32" in peer_ip else peer_ip + "/32"
+    row = db.fetchone(
+        "SELECT i.name FROM wg_interfaces i JOIN wg_peers p ON p.interface_id = i.id WHERE p.allowed_ips = %s",
+        (ip,),
+    )
+    return row["name"] if row else "wg0"
+
+
+def _get_peer_endpoint(peer_ip: str, interface_name: str | None = None) -> str:
     """Get the current endpoint for a peer from wg show."""
+    iface = interface_name or _resolve_interface_for_ip(peer_ip)
     try:
-        result = subprocess.run(["wg", "show", "wg0", "dump"], capture_output=True, text=True)
+        result = subprocess.run(["wg", "show", iface, "dump"], capture_output=True, text=True)
         for line in result.stdout.strip().split("\n")[1:]:
             fields = line.split("\t")
             if len(fields) >= 4 and peer_ip in fields[3]:
@@ -310,10 +334,11 @@ def _get_peer_endpoint(peer_ip: str) -> str:
     return ""
 
 
-def _get_peer_handshake(peer_ip: str) -> int:
+def _get_peer_handshake(peer_ip: str, interface_name: str | None = None) -> int:
     """Get latest handshake epoch for a peer from wg show."""
+    iface = interface_name or _resolve_interface_for_ip(peer_ip)
     try:
-        result = subprocess.run(["wg", "show", "wg0", "dump"], capture_output=True, text=True)
+        result = subprocess.run(["wg", "show", iface, "dump"], capture_output=True, text=True)
         for line in result.stdout.strip().split("\n")[1:]:
             fields = line.split("\t")
             if len(fields) >= 5 and peer_ip in fields[3]:
@@ -352,9 +377,12 @@ def check_reconnects():
         if not _should_reauth(peer):
             continue
 
-        current_endpoint = _get_peer_endpoint(peer_ip)
+        # Resolve the interface this peer belongs to
+        iface_name = _resolve_interface_for_ip(peer_ip)
+
+        current_endpoint = _get_peer_endpoint(peer_ip, iface_name)
         stored_endpoint = session.get("last_endpoint", "")
-        handshake = _get_peer_handshake(peer_ip)
+        handshake = _get_peer_handshake(peer_ip, iface_name)
 
         should_invalidate = False
         reason = ""
@@ -397,7 +425,8 @@ def cleanup_expired_sessions():
     now = datetime.utcnow().isoformat()
     expired = db.fetchall("SELECT peer_ip FROM vpn_auth_sessions WHERE expires <= %s", (now,))
     for session in expired:
-        _block_peer(session["peer_ip"])
+        iface_name = _resolve_interface_for_ip(session["peer_ip"])
+        _block_peer(session["peer_ip"], iface_name)
     db.execute("DELETE FROM vpn_auth_sessions WHERE expires <= %s", (now,))
     if expired:
         # Rebuild 2FA rules

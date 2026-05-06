@@ -16,3 +16,8 @@ all:
     # Set to "proxy" when running behind an external reverse proxy that handles TLS
     # Set to "local" (default) to use certbot/Let's Encrypt on this server
     ssl_mode: "local"
+    # -- Secrets (required) --
+    # Generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+    # For production, use ansible-vault to encrypt these values.
+    db_password: "CHANGEME"
+    hostbill_webhook_secret: "CHANGEME"

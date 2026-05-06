@@ -17,7 +17,10 @@ def _verify_scope(scope: str):
         # Check if it's a user session (admin GUI)
         user = users.verify_session(token)
         if user:
-            return {"customer": f"{user['firstname']} {user['lastname']}", "scope": "admin", "key_prefix": "session"}
+            # Only admin-role users may access API-scoped endpoints via session
+            if user["role"] != "admin":
+                raise HTTPException(403, "Admin role required for API access")
+            return {"customer": f"{user['firstname']} {user['lastname']}", "scope": "admin", "key_prefix": "session", "role": user["role"]}
         # Check API key with client IP
         client_ip = get_client_ip(request)
         info = keystore.verify_key(token, required_scope=scope, client_ip=client_ip)

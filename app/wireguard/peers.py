@@ -9,7 +9,8 @@ from . import manager, ipam, acl
 def create_peer(interface_id: int, name: str, note: str = "",
                 dns: str = "", persistent_keepalive: int = 25,
                 hostbill_service_id: int = 0, hostbill_client_id: int = 0,
-                acl_profile_id: int = 0, group_id: int = 0) -> dict:
+                acl_profile_id: int = 0, group_id: int = 0,
+                enabled: bool = True) -> dict:
     """Create a new peer: allocate IP, generate keys, write config."""
     iface = db.fetchone("SELECT * FROM wg_interfaces WHERE id = %s", (interface_id,))
     if not iface:
@@ -36,9 +37,9 @@ def create_peer(interface_id: int, name: str, note: str = "",
            (interface_id, name, private_key, public_key, preshared_key,
             allowed_ips, dns, persistent_keepalive, enabled,
             hostbill_service_id, hostbill_client_id, note, created, acl_profile_id, group_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s,%s,%s,%s,%s,%s) RETURNING id""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (interface_id, name, private_key, public_key, preshared_key,
-         allowed_ips, dns, persistent_keepalive,
+         allowed_ips, dns, persistent_keepalive, enabled,
          hostbill_service_id, hostbill_client_id, note, now, acl_profile_id, group_id),
         fetchone=True, commit=True,
     )
@@ -99,6 +100,7 @@ def update_peer(peer_id: int, name: str = None, note: str = None, dns: str = Non
                 group_id: int = None) -> dict:
     """Update peer metadata."""
     updates, params = [], []
+    acl_changed = False
     if name is not None:
         updates.append("name = %s")
         params.append(name)
@@ -114,6 +116,7 @@ def update_peer(peer_id: int, name: str = None, note: str = None, dns: str = Non
     if acl_profile_id is not None:
         updates.append("acl_profile_id = %s")
         params.append(acl_profile_id)
+        acl_changed = True
     if group_id is not None:
         updates.append("group_id = %s")
         params.append(group_id)
@@ -124,12 +127,13 @@ def update_peer(peer_id: int, name: str = None, note: str = None, dns: str = Non
             if group and group.get("acl_profile_id"):
                 updates.append("acl_profile_id = %s")
                 params.append(group["acl_profile_id"])
+                acl_changed = True
     if not updates:
         raise ValueError("No fields to update")
     params.append(peer_id)
     db.execute(f"UPDATE wg_peers SET {', '.join(updates)} WHERE id = %s", tuple(params))
     peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (peer_id,))
-    if acl_profile_id is not None:
+    if acl_changed:
         _apply_acl(peer["interface_id"])
     return dict(peer)
 

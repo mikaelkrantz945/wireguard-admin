@@ -1,6 +1,6 @@
 # 08 — Portal Activation Expiry Not Enforced
 
-**Status:** Open
+**Status:** Fixed
 **Priority:** Medium
 **Area:** Authentication, Token Management
 

@@ -199,6 +199,7 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
                 name=name,
                 note=email,
                 group_id=req.group_id,
+                enabled=False,
             )
             peer_id = result["peer"]["id"]
             # Peer created as disabled — send activation email

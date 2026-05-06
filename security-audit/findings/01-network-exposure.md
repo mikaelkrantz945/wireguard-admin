@@ -1,32 +1,37 @@
 # 01 — Network Exposure (Firewall / Port 8092)
 
-**Status:** Open
+**Status:** Fix implemented
 **Priority:** Critical
 **Area:** Network, Firewall
 
 ## Summary
 
-The FastAPI application listens on port 8092 with `network_mode: host`. If UFW or iptables does not block external access to port 8092, the API is directly reachable without going through nginx — bypassing TLS, rate limiting, and any nginx-level protections.
+The FastAPI application listens on port 8092 with `network_mode: host` bound to `0.0.0.0`. While UFW blocks external access, **VPN peers can always reach port 8092** on the WireGuard interface IP and spoof `X-Real-IP` headers.
 
-## Key Questions
+## Confirmed Findings
 
-- [ ] Is port 8092 accessible from outside the host?
-- [ ] Does `X-Real-IP` / `X-Forwarded-For` spoofing bypass IP-based ACLs when accessing the API directly?
-- [ ] Are API keys the only auth layer, or does nginx add anything?
-- [ ] Is the captive portal endpoint (8092) exposed without auth?
+### 1.1 — Port 8092 exposure
 
-## Investigation Steps
+- `docker-compose.yml:61`: `network_mode: "host"`
+- `Dockerfile:19`: uvicorn binds `0.0.0.0:8092`
+- UFW does NOT allow 8092 (default deny) — external access blocked
+- **But**: VPN peers on the WG tunnel can hit `<server-wg-ip>:8092` directly, bypassing nginx
 
-1. Check UFW rules: `sudo ufw status verbose`
-2. Check iptables: `sudo iptables -L -n | grep 8092`
-3. External port scan: `nmap -p 8092 <server-ip>`
-4. Test direct API access: `curl http://<server-ip>:8092/health`
-5. Test X-Real-IP spoofing: `curl -H "X-Real-IP: 1.2.3.4" http://<server-ip>:8092/wg/interfaces`
+### 1.2 — X-Real-IP spoofing (EXPLOITABLE TODAY)
 
-## Findings
+Three locations trust `X-Real-IP` unconditionally:
 
-<!-- Document results here -->
+| File | Line | Impact |
+|------|------|--------|
+| `app/auth.py` | 21 | API key IP ACL bypass |
+| `app/vpn2fa_routes.py` | 30 | 2FA session hijack (verify) |
+| `app/vpn2fa_routes.py` | 44 | 2FA session hijack (status) |
+
+A VPN peer can spoof `X-Real-IP` to:
+- Bypass API key `allowed_ips` restrictions
+- Authenticate a 2FA session for a different peer's IP
+- Check another peer's 2FA status
 
 ## Remediation
 
-<!-- Document fixes here -->
+**Fix:** Created `app/utils.py` with `get_client_ip()` that only trusts `X-Real-IP` from `127.0.0.1`/`::1`. Updated all 3 call sites.

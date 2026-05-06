@@ -1,31 +1,48 @@
-# 03 — Portal HTML XSS Audit
+# 03 — XSS Audit (admin.html + portal.html)
 
-**Status:** Open
-**Priority:** High
+**Status:** Fix in progress
+**Priority:** Critical (upgraded from High)
 **Area:** XSS, Frontend Security
 
-## Summary
+## Confirmed Findings
 
-The portal uses vanilla JS with `innerHTML` assignments. The `portal_welcome_message` server setting and other user-controlled data may be rendered without sanitization, creating stored XSS vectors.
+**portal.html:** SAFE — 3 innerHTML usages all use hardcoded HTML, no user data interpolation.
+**captive.html:** SAFE — uses textContent only.
+**admin.html:** 12 XSS vectors — 3 CRITICAL, 5 HIGH, 2 MEDIUM, 2 LOW.
 
-## Key Questions
+### Critical — onclick attribute injection
 
-- [ ] Is `portal_welcome_message` rendered via `innerHTML` or `textContent`?
-- [ ] What other fields are rendered without escaping (peer names, group names, etc.)?
-- [ ] Can an admin inject script via settings that executes in portal user context?
-- [ ] Are there DOM-based XSS vectors (URL parameters rendered into page)?
+| # | Line | Vector | PoC |
+|---|------|--------|-----|
+| 3 | ~644 | `onclick="showPeerConfig(id,'${p.name}')"` | Peer name: `');alert(document.cookie);//` |
+| 4 | ~840 | `onclick="setupVpn2fa(id,'${peer.name}')"` | Same pattern |
+| 12 | ~1092 | `onclick="showImportUsers(id,'${i.name}')"` | Integration name: same |
 
-## Files to Review
+These allow JS execution through quote-breaking — no HTML tags needed, bypasses tag-only sanitization.
 
-- `app/static/portal.html`
-- `app/static/admin.html`
-- `app/static/captive.html`
-- Any endpoint that returns HTML content
+### High — innerHTML with user data
 
-## Findings
+| # | Line | Data source |
+|---|------|-------------|
+| 1 | ~610 | Dashboard: `p.name` |
+| 2 | ~634 | Peers table: `p.name`, `p.group_name`, `p.acl_profile_name` |
+| 6 | ~767 | Logs table: `x.path`, `x.customer` (external attacker controlled) |
+| 7 | ~773 | Users table: `x.firstname`, `x.lastname`, `x.email` |
+| 10 | ~1178 | Import users: Google Workspace data (external) |
+| 11 | ~874,933,1092 | Dropdowns: group/profile/integration names |
 
-<!-- Document results here -->
+### Medium
+
+| # | Line | Data source |
+|---|------|-------------|
+| 8 | ~1062 | Settings form: `value="${s.value}"` attribute breakout |
+
+### Future risk
+
+`portal_welcome_message` server setting says "HTML allowed" but is not yet rendered in portal.html. When implemented, it will be stored XSS unless sanitized with DOMPurify.
 
 ## Remediation
 
-<!-- Document fixes here -->
+- Added `esc()` helper function for HTML entity escaping
+- All user-controlled data wrapped with `esc()` in innerHTML
+- onclick injection fixed with `encodeURIComponent`/`data-n` attributes

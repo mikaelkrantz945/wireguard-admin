@@ -1,40 +1,33 @@
 # 06 — Missing Auth Checks on Security-Sensitive Endpoints
 
-**Status:** Open
+**Status:** Fix implemented
 **Priority:** Critical
 **Area:** Authentication, Authorization
 
-## Summary
+## Confirmed Findings
 
-Several high-privilege endpoints that control host networking, portal credentials, and VPN access lack proper authentication enforcement.
+### 6.1 — `/portal/send-activation` lacks admin auth (CRITICAL)
 
-## Known Issues
+- **File:** `app/portal.py:277`
+- **Current auth:** NONE — `_require_admin` is imported inside function body but never called (dead code)
+- **Impact:** Unauthenticated users can trigger activation emails AND disable active VPN peers
+- **Activation reset bug:** `send_activation_email` (line 39) sets `activated=FALSE, enabled=FALSE`, disabling active peers
 
-### 6.1 — `/portal/send-activation` lacks admin auth
+### 6.2 — VPN 2FA management endpoints lack auth (CRITICAL)
 
-The endpoint is intended to be admin-only but does not enforce admin authentication. An unauthenticated or portal-authenticated user could trigger activation emails.
+| Endpoint | File:Line | Auth | Impact |
+|----------|-----------|------|--------|
+| `POST /vpn-auth/setup/{peer_id}` | `vpn2fa_routes.py:50` | NONE | Generate TOTP secret for any peer |
+| `POST /vpn-auth/enable/{peer_id}` | `vpn2fa_routes.py:59` | NONE | Set own TOTP on any peer (takeover) |
+| `POST /vpn-auth/disable/{peer_id}` | `vpn2fa_routes.py:69` | NONE | Disable 2FA on any peer |
 
-**Worse:** resending activation resets `activated = FALSE` and `enabled = FALSE`, meaning this endpoint can **disable an already active VPN peer**.
-
-- **File:** `app/portal.py`
-- **Impact:** Denial of service against active VPN users, unauthorized activation email sending
-
-### 6.2 — VPN 2FA endpoints lack admin auth
-
-Peer 2FA setup, enable, and disable endpoints are exposed without admin authentication checks. An attacker could disable 2FA on a peer or set up their own TOTP secret.
-
-- **File:** `app/vpn2fa_routes.py`
-- **Impact:** 2FA bypass, unauthorized peer access
-
-## Investigation Steps
-
-- [ ] Identify the auth decorator/dependency used on these endpoints
-- [ ] List all endpoints in `portal.py` and `vpn2fa_routes.py` and their auth requirements
-- [ ] Verify whether portal tokens can access admin-only endpoints
-- [ ] Check if the activation reset (`activated=FALSE`, `enabled=FALSE`) is intentional or a bug
+Public endpoints (captive portal) correctly remain unauthenticated:
+- `GET /vpn-auth/captive` — OK
+- `POST /vpn-auth/verify` — OK (IP-scoped)
+- `GET /vpn-auth/status` — OK (IP-scoped)
 
 ## Remediation
 
-- [ ] Add admin auth check to `/portal/send-activation`
-- [ ] Add admin auth checks to all VPN 2FA management endpoints
-- [ ] Separate "resend activation" from "reset activation state" — resending should not disable active peers
+1. Added `dependencies=[Depends(_require_admin)]` to `/portal/send-activation`
+2. Added `dependencies=[Depends(_require_admin)]` to all 3 VPN 2FA management endpoints
+3. Fixed activation reset: `send_activation_email` no longer sets `activated=FALSE, enabled=FALSE`

@@ -324,7 +324,8 @@ print("\n=== #8 Activation Expiry ===")
 if iface_id:
     d, err = api(f"/wg/interfaces/{iface_id}/peers", "POST", {
         "name": "expiry-test",
-        "note": "Activation expiry test"
+        "note": "Activation expiry test",
+        "portal_email": "expirytest@example.com"
     })
     if d and d.get("peer", {}).get("id"):
         test_peer_id = d["peer"]["id"]
@@ -355,7 +356,8 @@ print("\n=== #10 ACL Enforcement ===")
 if iface_id:
     d, err = api(f"/wg/interfaces/{iface_id}/peers", "POST", {
         "name": "acl-test-peer",
-        "note": "ACL drift test"
+        "note": "ACL drift test",
+        "portal_email": "acltest@example.com"
     })
     if d and d.get("peer"):
         peer = d["peer"]

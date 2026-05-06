@@ -7,5 +7,6 @@
     - docker
     - wireguard
     - nginx
-    - certbot
+    - role: certbot
+      when: ssl_mode | default('local') == 'local'
     - app

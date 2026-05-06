@@ -14,13 +14,22 @@
   stat:
     path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
   register: ssl_cert
+  when: ssl_mode | default('local') == 'local'
 
-- name: Deploy nginx vhost config (only if SSL not yet configured)
+- name: Deploy nginx vhost config (proxy mode — always)
   template:
     src: wireguard-admin.conf.j2
     dest: /etc/nginx/sites-available/wireguard-admin
     mode: "0644"
-  when: not ssl_cert.stat.exists
+  when: ssl_mode | default('local') == 'proxy'
+  notify: Reload nginx
+
+- name: Deploy nginx vhost config (local mode — only if SSL not yet configured)
+  template:
+    src: wireguard-admin.conf.j2
+    dest: /etc/nginx/sites-available/wireguard-admin
+    mode: "0644"
+  when: ssl_mode | default('local') == 'local' and not ssl_cert.stat.exists
   notify: Reload nginx
 
 - name: Enable nginx vhost
@@ -30,12 +39,20 @@
     state: link
   notify: Reload nginx
 
-- name: Deploy captive portal catch-all (after SSL cert exists)
+- name: Deploy captive portal catch-all (proxy mode — always)
   template:
     src: captive-portal.conf.j2
     dest: /etc/nginx/sites-available/captive-portal
     mode: "0644"
-  when: ssl_cert.stat.exists
+  when: ssl_mode | default('local') == 'proxy'
+  notify: Reload nginx
+
+- name: Deploy captive portal catch-all (local mode — after SSL cert exists)
+  template:
+    src: captive-portal.conf.j2
+    dest: /etc/nginx/sites-available/captive-portal
+    mode: "0644"
+  when: ssl_mode | default('local') == 'local' and ssl_cert.stat.exists
   notify: Reload nginx
 
 - name: Enable captive portal catch-all
@@ -43,7 +60,7 @@
     src: /etc/nginx/sites-available/captive-portal
     dest: /etc/nginx/sites-enabled/captive-portal
     state: link
-  when: ssl_cert.stat.exists
+  when: ssl_mode | default('local') == 'proxy' or (ssl_mode | default('local') == 'local' and ssl_cert.stat.exists)
   notify: Reload nginx
 
 - name: Test nginx config

@@ -24,8 +24,10 @@
           - wireguard
           - wireguard-tools
           - nginx
+{% if ssl_mode | default('local') == 'local' %}
           - certbot
           - python3-certbot-nginx
+{% endif %}
           - irqbalance
           - ethtool
         state: present
@@ -120,7 +122,9 @@
       loop:
         - { port: "22", proto: "tcp" }
         - { port: "80", proto: "tcp" }
+{% if ssl_mode | default('local') == 'local' %}
         - { port: "443", proto: "tcp" }
+{% endif %}
         - { port: "{{ wg_port }}", proto: "udp" }
 
     - name: Enable UFW
@@ -154,13 +158,14 @@
       stat:
         path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
       register: ssl_cert
+      when: ssl_mode | default('local') == 'local'
 
     - name: Deploy nginx vhost config
       template:
         src: roles/nginx/templates/wireguard-admin.conf.j2
         dest: /etc/nginx/sites-available/wireguard-admin
         mode: "0644"
-      when: not ssl_cert.stat.exists
+      when: ssl_mode | default('local') == 'proxy' or not ssl_cert.stat.exists
       notify: Reload nginx
 
     - name: Enable nginx vhost
@@ -201,14 +206,16 @@
       debug:
         msg:
           - "WireGuard Admin is running!"
-          - "Admin GUI: http://{{ domain }}/admin/ui"
-          - "User Portal: http://{{ domain }}/portal/ui"
+          - "Admin GUI: {{ base_url | default('https://' + domain) }}/admin/ui"
+          - "User Portal: {{ base_url | default('https://' + domain) }}/portal/ui"
           - ""
           - "Next: Bootstrap your admin account with:"
           - "curl -X POST http://localhost:{{ api_port }}/admin/bootstrap -H 'Content-Type: application/json' -d '{\"firstname\":\"Admin\",\"lastname\":\"User\",\"email\":\"{{ contact_email }}\",\"password\":\"changeme1\"}'"
+{% if ssl_mode | default('local') == 'local' %}
           - ""
           - "Then run certbot for HTTPS:"
           - "cd ansible && ansible-playbook -i inventory.yml certbot.yml"
+{% endif %}
 
   handlers:
     - name: Reload nginx

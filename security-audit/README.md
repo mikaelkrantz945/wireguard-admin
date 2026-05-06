@@ -15,6 +15,8 @@ Security analysis of the wireguard-admin project. Findings, remediation tracking
 | 7 | [Weak password hashing](findings/07-weak-password-hashing.md) | Open | Critical |
 | 8 | [Activation expiry not enforced](findings/08-activation-expiry.md) | Open | Medium |
 | 9 | [iptables state sync](findings/09-iptables-state-sync.md) | Open | Medium |
+| 10 | [ACL enforcement state drift](findings/10-acl-enforcement-drift.md) | Open | Critical |
+| 11 | [2FA multi-interface bugs](findings/11-2fa-multi-interface.md) | Open | High |
 
 ## Severity Scale
 

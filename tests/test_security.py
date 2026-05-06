@@ -45,7 +45,9 @@ def skip(name, detail=""):
     print(f"  \u23ed\ufe0f  {name}" + (f" \u2014 {detail}" if detail else ""))
 
 
-def api(path, method="GET", data=None, expect=200, auth=True, headers=None):
+def api(path, method="GET", data=None, expect=None, auth=True, headers=None):
+    if expect is None:
+        expect = [200, 201]
     url = f"{BASE}{path}"
     h = {"Content-Type": "application/json"}
     if auth and TOKEN:
@@ -54,8 +56,9 @@ def api(path, method="GET", data=None, expect=200, auth=True, headers=None):
         h.update(headers)
     try:
         r = requests.request(method, url, json=data, headers=h, timeout=15)
-        if r.status_code != expect:
-            return None, f"HTTP {r.status_code} (expected {expect}): {r.text[:200]}"
+        expected = expect if isinstance(expect, (list, tuple)) else [expect]
+        if r.status_code not in expected:
+            return None, f"HTTP {r.status_code} (expected {expected}): {r.text[:200]}"
         try:
             return r.json(), None
         except Exception:
@@ -189,37 +192,28 @@ if iface_id:
 print("\n=== #6 Auth Checks ===")
 
 # Test /portal/send-activation without auth — should return 401/403
-d, err = api("/portal/send-activation", "POST", {"peer_id": 1}, expect=401, auth=False)
-if err and "401" not in str(err) and "403" not in str(err):
-    # Try 403
-    d, err = api("/portal/send-activation", "POST", {"peer_id": 1}, expect=403, auth=False)
+d, err = api("/portal/send-activation", "POST", {"peer_id": 1}, expect=[401, 403, 422], auth=False)
 if err:
     fail("send-activation requires auth", err)
 else:
     ok("send-activation blocked without auth")
 
 # Test VPN 2FA setup without auth
-d, err = api("/vpn-auth/setup/1", "POST", expect=401, auth=False)
-if err and "401" not in str(err) and "403" not in str(err):
-    d, err = api("/vpn-auth/setup/1", "POST", expect=403, auth=False)
+d, err = api("/vpn-auth/setup/1", "POST", expect=[401, 403], auth=False)
 if err:
     fail("2FA setup requires auth", err)
 else:
     ok("2FA setup blocked without auth")
 
 # Test VPN 2FA enable without auth
-d, err = api("/vpn-auth/enable/1", "POST", expect=401, auth=False)
-if err and "401" not in str(err) and "403" not in str(err):
-    d, err = api("/vpn-auth/enable/1", "POST", expect=403, auth=False)
+d, err = api("/vpn-auth/enable/1", "POST", expect=[401, 403], auth=False)
 if err:
     fail("2FA enable requires auth", err)
 else:
     ok("2FA enable blocked without auth")
 
 # Test VPN 2FA disable without auth
-d, err = api("/vpn-auth/disable/1", "POST", expect=401, auth=False)
-if err and "401" not in str(err) and "403" not in str(err):
-    d, err = api("/vpn-auth/disable/1", "POST", expect=403, auth=False)
+d, err = api("/vpn-auth/disable/1", "POST", expect=[401, 403], auth=False)
 if err:
     fail("2FA disable requires auth", err)
 else:

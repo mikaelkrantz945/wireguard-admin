@@ -97,7 +97,7 @@ async def bootstrap(req: BootstrapRequest):
     now = datetime.utcnow().isoformat()
     db.execute(
         "INSERT INTO users (firstname, lastname, email, password_hash, role, active, must_change_password, created, accepted) VALUES (%s,%s,%s,%s,'admin',TRUE,TRUE,%s,%s)",
-        (req.firstname, req.lastname, req.email, users._hash_password(req.password), now, now),
+        (req.firstname, req.lastname, req.email, users.hash_password(req.password), now, now),
     )
     return {"created": req.email, "role": "admin"}
 

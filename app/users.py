@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 
 from . import db
+from .password import hash_password, verify_password
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "localhost")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
@@ -16,8 +17,7 @@ BASE_URL = os.environ.get("BASE_URL", "https://vpn.example.com")
 
 
 def _hash_password(password: str) -> str:
-    salt = "wgadmin-salt"
-    return hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+    return hash_password(password)
 
 
 def _hash_token(token: str) -> str:
@@ -73,8 +73,13 @@ def accept_invite(token: str, password: str) -> dict:
 
 def login(email: str, password: str, totp_code: str = "") -> dict | None:
     user = db.fetchone("SELECT * FROM users WHERE email = %s AND active = TRUE", (email,))
-    if not user or user["password_hash"] != _hash_password(password):
+    if not user:
         return None
+    ok, needs_rehash = verify_password(password, user["password_hash"])
+    if not ok:
+        return None
+    if needs_rehash:
+        db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(password), user["id"]))
 
     if user["totp_enabled"]:
         if not totp_code:

@@ -2,11 +2,13 @@
 
 import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from . import vpn2fa, db
+from .admin import _require_admin
+from .utils import get_client_ip
 
 router = APIRouter(prefix="/vpn-auth", tags=["VPN 2FA"])
 
@@ -27,7 +29,7 @@ class VerifyRequest(BaseModel):
 async def verify_2fa(req: VerifyRequest, request: Request):
     """Verify TOTP code and open VPN access for the caller's IP."""
     # Get the client's VPN IP (via WireGuard, this is the peer's tunnel IP)
-    client_ip = request.headers.get("x-real-ip", "") or (request.client.host if request.client else "")
+    client_ip = get_client_ip(request)
     if not client_ip:
         raise HTTPException(400, "Cannot determine your IP")
 
@@ -41,13 +43,13 @@ async def verify_2fa(req: VerifyRequest, request: Request):
 @router.get("/status")
 async def check_status(request: Request):
     """Check if the caller has an active 2FA session."""
-    client_ip = request.headers.get("x-real-ip", "") or (request.client.host if request.client else "")
+    client_ip = get_client_ip(request)
     return vpn2fa.check_session(client_ip)
 
 
 # -- Admin endpoints (for managing 2FA on peers) --
 
-@router.post("/setup/{peer_id}")
+@router.post("/setup/{peer_id}", dependencies=[Depends(_require_admin)])
 async def setup_peer_2fa(peer_id: int):
     """Generate TOTP secret and QR for a peer."""
     try:
@@ -56,7 +58,7 @@ async def setup_peer_2fa(peer_id: int):
         raise HTTPException(400, str(e))
 
 
-@router.post("/enable/{peer_id}")
+@router.post("/enable/{peer_id}", dependencies=[Depends(_require_admin)])
 async def enable_peer_2fa(peer_id: int, req: dict):
     """Enable 2FA for a peer after verifying TOTP code."""
     try:
@@ -66,7 +68,7 @@ async def enable_peer_2fa(peer_id: int, req: dict):
         raise HTTPException(400, str(e))
 
 
-@router.post("/disable/{peer_id}")
+@router.post("/disable/{peer_id}", dependencies=[Depends(_require_admin)])
 async def disable_peer_2fa(peer_id: int):
     """Disable 2FA for a peer."""
     vpn2fa.disable_2fa(peer_id)

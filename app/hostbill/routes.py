@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..config import settings
+from ..password import hash_password
 from .. import db
 from ..wireguard import peers
 
@@ -92,11 +93,11 @@ def _create(req: ProvisionRequest) -> dict:
 
     # Send welcome email with portal link to set password
     if req.client_email:
-        from ..portal import send_activation_email
+        from ..portal import send_activation_email, _hash
         # Use "password" method — user sets portal password, but peer is already active
-        import secrets, hashlib
+        import secrets
         token = secrets.token_urlsafe(48)
-        token_hash = hashlib.sha256(f"wgportal:{token}".encode()).hexdigest()
+        token_hash = _hash(token)
         db.execute(
             "UPDATE wg_peers SET activation_token = %s, activation_method = 'password' WHERE id = %s",
             (token_hash, peer_id),

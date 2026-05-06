@@ -9,11 +9,13 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 
 import httpx
-from fastapi import APIRouter, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 from . import db
+from .admin import _require_admin
+from .password import hash_password as _hash_portal_password, verify_password
 from .wireguard import peers as peer_ops, acl
 
 router = APIRouter(prefix="/portal", tags=["Portal"])
@@ -36,7 +38,7 @@ def send_activation_email(peer_id: int, email: str, name: str, method: str = "pa
     """Generate activation token and send email."""
     token = secrets.token_urlsafe(48)
     db.execute(
-        "UPDATE wg_peers SET activation_token = %s, activation_method = %s, portal_email = %s, activated = FALSE, enabled = FALSE WHERE id = %s",
+        "UPDATE wg_peers SET activation_token = %s, activation_method = %s, portal_email = %s WHERE id = %s",
         (_hash(token), method, email, peer_id),
     )
     if method == "google":
@@ -136,7 +138,7 @@ async def activate_with_password(req: ActivatePasswordRequest):
 
     db.execute(
         "UPDATE wg_peers SET portal_password_hash = %s, activated = TRUE, enabled = TRUE, activation_token = '' WHERE id = %s",
-        (_hash(req.password), peer["id"]),
+        (_hash_portal_password(req.password), peer["id"]),
     )
 
     # Apply WG config since peer is now enabled
@@ -196,8 +198,13 @@ async def portal_login(req: PortalLoginRequest):
         "SELECT * FROM wg_peers WHERE portal_email = %s AND portal_password_hash != ''",
         (req.email,),
     )
-    if not peer or peer["portal_password_hash"] != _hash(req.password):
+    if not peer:
         raise HTTPException(401, "Invalid email or password")
+    ok, needs_rehash = verify_password(req.password, peer["portal_password_hash"])
+    if not ok:
+        raise HTTPException(401, "Invalid email or password")
+    if needs_rehash:
+        db.execute("UPDATE wg_peers SET portal_password_hash = %s WHERE id = %s", (_hash_portal_password(req.password), peer["id"]))
     if not peer.get("activated"):
         raise HTTPException(403, "Account not yet activated. Check your email for the activation link.")
     if not peer["enabled"]:
@@ -274,10 +281,9 @@ class SendActivationRequest(BaseModel):
     method: str = "password"  # "password" or "google"
 
 
-@router.post("/send-activation")
+@router.post("/send-activation", dependencies=[Depends(_require_admin)])
 async def send_activation(req: SendActivationRequest):
     """Admin endpoint: send activation email to a peer."""
-    from .admin import _require_admin
     peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (req.peer_id,))
     if not peer:
         raise HTTPException(404, "Peer not found")

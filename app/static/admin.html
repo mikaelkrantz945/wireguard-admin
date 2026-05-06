@@ -524,6 +524,13 @@ tr:hover{background:#1c1f26}
 </div>
 
 <script>
+function esc(s){
+  if(s==null)return'';
+  const d=document.createElement('div');
+  d.textContent=String(s);
+  return d.innerHTML;
+}
+
 let TOKEN=sessionStorage.getItem('tk')||'';
 let USER=JSON.parse(sessionStorage.getItem('usr')||'null');
 let allPeers=[];
@@ -539,7 +546,7 @@ async function api(p,o={}){
 }
 
 function pg(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('appView').style.display='none';if(id==='app'){document.getElementById('appView').style.display='block'}else{document.getElementById(id).classList.add('active')}}
-function badge(t,c){return`<span class="badge badge-${c||t}">${t}</span>`}
+function badge(t,c){return`<span class="badge badge-${esc(c||t)}">${esc(t)}</span>`}
 function ts(s){return s?s.replace('T',' ').slice(0,19):'-'}
 function fmtBytes(b){if(!b||b===0)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 function fmtHandshake(epoch){if(!epoch)return'-';const d=Math.floor(Date.now()/1000)-epoch;if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago'}
@@ -607,7 +614,7 @@ async function loadDashboard(){
   c+=`<div class="stat-card"><div class="val">${stats.today}</div><div class="label">API requests today</div></div>`;
   c+=`<div class="stat-card"><div class="val">${stats.today_errors}</div><div class="label">Errors today</div></div>`;
   document.getElementById('statsCards').innerHTML=c;
-  document.getElementById('dashPeers').innerHTML=allDashPeers.length?allDashPeers.map(p=>`<tr><td>${p.name}</td><td class="mono">${p.allowed_ips}</td><td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td><td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td><td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">No peers yet</td></tr>';
+  document.getElementById('dashPeers').innerHTML=allDashPeers.length?allDashPeers.map(p=>`<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.allowed_ips)}</td><td class="mono">${esc(p.live_endpoint)||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td><td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td><td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">No peers yet</td></tr>';
 }
 
 // ── Peers ──
@@ -615,7 +622,7 @@ async function loadPeers(){
   const ifaces=await api('/wg/interfaces').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const sel=document.getElementById('peerIfaceFilter');
   const prev=sel.value;
-  sel.innerHTML=ifaces.map(i=>`<option value="${i.id}">${i.name} (${i.address})</option>`).join('');
+  sel.innerHTML=ifaces.map(i=>`<option value="${i.id}">${esc(i.name)} (${esc(i.address)})</option>`).join('');
   if(prev)sel.value=prev;
   const ifaceId=sel.value;
   if(!ifaceId){document.getElementById('peersTable').innerHTML='<tr><td colspan="8" class="empty">No interfaces</td></tr>';return}
@@ -632,16 +639,16 @@ function filterPeers(){
   if(sf==='disabled')f=f.filter(p=>!p.enabled);
   const adm=USER&&USER.role==='admin';
   document.getElementById('peersTable').innerHTML=f.length?f.map(p=>`<tr>
-    <td>${p.id}</td><td>${p.name}</td><td class="mono">${p.allowed_ips}</td>
+    <td>${p.id}</td><td>${esc(p.name)}</td><td class="mono">${esc(p.allowed_ips)}</td>
     <td>${p.group_name?badge(p.group_name,'hostbill'):'-'}</td>
     <td>${badge(p.acl_profile_name||'Default','all')}</td>
-    <td class="mono">${p.live_endpoint||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td>
+    <td class="mono">${esc(p.live_endpoint)||'-'}</td><td>${fmtHandshake(p.latest_handshake)}</td>
     <td class="mono">${fmtBytes(p.transfer_rx)} / ${fmtBytes(p.transfer_tx)}</td>
     <td>${p.activated?badge('activated','enabled'):badge('pending','pending')}</td>
     <td>${p.require_2fa?badge('required','wireguard'):'-'}</td>
     <td>${p.enabled?badge('enabled','enabled'):badge('disabled','disabled')}</td>
     <td style="white-space:nowrap">
-      <button class="btn btn-sm btn-secondary" onclick="showPeerConfig(${p.id},'${p.name}')">Config</button>
+      <button class="btn btn-sm btn-secondary" onclick="showPeerConfig(${p.id},decodeURIComponent(this.getAttribute('data-n')))" data-n="${encodeURIComponent(p.name)}">Config</button>
       ${adm?`<button class="btn btn-sm btn-secondary" onclick="showEditPeer(${p.id})">Edit</button>
       ${!p.activated?`<button class="btn btn-sm btn-primary" onclick="sendActivation(${p.id})">Send Activation</button>`:''}
       <button class="btn btn-sm ${p.enabled?'btn-danger':'btn-primary'}" onclick="${p.enabled?'togglePeer('+p.id+',false)':'togglePeer('+p.id+',true)'}">${p.enabled?'Disable':'Enable'}</button>`:''}
@@ -665,7 +672,7 @@ async function doCreatePeer(){
   const r=await api(`/wg/interfaces/${ifaceId}/peers`,{method:'POST',body:JSON.stringify(d)});
   if(r.ok){
     const res=await r.json();
-    document.getElementById('newPeerResult').innerHTML=`<div class="qr-container"><img src="${res.qr_code}"></div><div class="config-display">${res.client_config}</div><div class="key-display"><div class="warn">Save this config — the private key cannot be shown again from the GUI.</div></div>`;
+    document.getElementById('newPeerResult').innerHTML=`<div class="qr-container"><img src="${esc(res.qr_code)}"></div><div class="config-display">${esc(res.client_config)}</div><div class="key-display"><div class="warn">Save this config — the private key cannot be shown again from the GUI.</div></div>`;
     document.getElementById('createPeerBtn').style.display='none';loadPeers();
   }else{const e=await r.json();document.getElementById('newPeerErr').textContent=e.detail||'Failed'}
 }
@@ -726,8 +733,8 @@ async function loadInterfaces(){
   const ifaces=await api('/wg/interfaces').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const adm=USER&&USER.role==='admin';
   document.getElementById('ifacesTable').innerHTML=ifaces.length?ifaces.map(i=>`<tr>
-    <td>${i.id}</td><td class="mono">${i.name}</td><td class="mono">${i.address}</td><td class="mono">${i.subnet}</td>
-    <td>${i.listen_port}</td><td class="mono">${i.endpoint}</td><td>${i.peer_count}</td>
+    <td>${i.id}</td><td class="mono">${esc(i.name)}</td><td class="mono">${esc(i.address)}</td><td class="mono">${esc(i.subnet)}</td>
+    <td>${i.listen_port}</td><td class="mono">${esc(i.endpoint)}</td><td>${i.peer_count}</td>
     <td>${i.require_2fa?badge('required','wireguard'):badge('disabled','disabled')}</td>
     <td>${i.is_up?badge('up','up'):badge('down','down')}</td>
     <td>${adm?`<button class="btn btn-sm ${i.is_up?'btn-danger':'btn-primary'}" onclick="toggleIface(${i.id},${i.is_up})">${i.is_up?'Down':'Up'}</button>
@@ -749,12 +756,12 @@ async function loadKeys(){
   const f=document.getElementById('keyFilter').value;
   const u=f?`/admin/keys?customer=${encodeURIComponent(f)}`:'/admin/keys';
   const k=await api(u).then(r=>r.json());const adm=USER&&USER.role==='admin';
-  document.getElementById('keysTable').innerHTML=k.length?k.map(x=>`<tr><td>${x.id}</td><td class="mono">${x.key_prefix}...</td><td>${x.customer}</td><td>${badge(x.scope,x.scope)}</td><td class="mono" style="font-size:.78rem">${x.allowed_ips||'<span style="color:#8b949e">any</span>'}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.last_used)}</td><td>${x.active?badge('active','active'):badge('revoked','revoked')}</td><td>${x.note||''}</td><td>${adm?(x.active?`<button class="btn btn-danger btn-sm" onclick="revokeKey(${x.id})">Revoke</button>`:`<button class="btn btn-sm btn-secondary" onclick="deleteKey(${x.id})">Delete</button>`):''}</td></tr>`).join(''):'<tr><td colspan="10" class="empty">No keys</td></tr>';
+  document.getElementById('keysTable').innerHTML=k.length?k.map(x=>`<tr><td>${x.id}</td><td class="mono">${esc(x.key_prefix)}...</td><td>${esc(x.customer)}</td><td>${badge(x.scope,x.scope)}</td><td class="mono" style="font-size:.78rem">${x.allowed_ips?esc(x.allowed_ips):'<span style="color:#8b949e">any</span>'}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.last_used)}</td><td>${x.active?badge('active','active'):badge('revoked','revoked')}</td><td>${esc(x.note||'')}</td><td>${adm?(x.active?`<button class="btn btn-danger btn-sm" onclick="revokeKey(${x.id})">Revoke</button>`:`<button class="btn btn-sm btn-secondary" onclick="deleteKey(${x.id})">Delete</button>`):''}</td></tr>`).join(''):'<tr><td colspan="10" class="empty">No keys</td></tr>';
 }
 async function createKey(){
   const d={customer:document.getElementById('newKeyCustomer').value,scope:document.getElementById('newKeyScope').value,note:document.getElementById('newKeyNote').value,allowed_ips:document.getElementById('newKeyIPs').value};
   if(!d.customer)return;const r=await api('/admin/keys',{method:'POST',body:JSON.stringify(d)});const res=await r.json();
-  if(r.ok){document.getElementById('newKeyResult').innerHTML=`<div class="key-display">${res.key}<div class="warn">Copy now — shown only once.</div></div>`;document.getElementById('createKeyBtn').style.display='none';loadKeys()}
+  if(r.ok){document.getElementById('newKeyResult').innerHTML=`<div class="key-display">${esc(res.key)}<div class="warn">Copy now — shown only once.</div></div>`;document.getElementById('createKeyBtn').style.display='none';loadKeys()}
 }
 async function revokeKey(id){if(confirm('Revoke?')){await api(`/admin/keys/${id}`,{method:'DELETE'});loadKeys()}}
 async function deleteKey(id){if(confirm('Delete permanently?')){await api(`/admin/keys/${id}/permanent`,{method:'DELETE'});loadKeys()}}
@@ -764,13 +771,13 @@ async function loadLogs(){
   const c=document.getElementById('logCustomer').value,p=document.getElementById('logPath').value,l=document.getElementById('logLimit').value;
   let u=`/admin/logs?limit=${l}`;if(c)u+=`&customer=${encodeURIComponent(c)}`;if(p)u+=`&path=${encodeURIComponent(p)}`;
   const logs=await api(u).then(r=>r.json());
-  document.getElementById('logsTable').innerHTML=logs.length?logs.map(x=>`<tr><td class="mono">${ts(x.ts)}</td><td>${x.method}</td><td class="mono">${x.path}</td><td>${badge(x.status,x.status)}</td><td class="mono">${x.client_ip||'-'}</td><td>${x.customer||'-'}</td><td class="mono">${x.key_prefix||'-'}</td><td>${x.scope?badge(x.scope,x.scope):'-'}</td><td>${x.duration_ms}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">No logs</td></tr>';
+  document.getElementById('logsTable').innerHTML=logs.length?logs.map(x=>`<tr><td class="mono">${ts(x.ts)}</td><td>${esc(x.method)}</td><td class="mono">${esc(x.path)}</td><td>${badge(x.status,x.status)}</td><td class="mono">${esc(x.client_ip)||'-'}</td><td>${esc(x.customer)||'-'}</td><td class="mono">${esc(x.key_prefix)||'-'}</td><td>${x.scope?badge(x.scope,x.scope):'-'}</td><td>${x.duration_ms}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">No logs</td></tr>';
 }
 
 // ── Users ──
 async function loadUsers(){
   const u=await api('/admin/users').then(r=>r.json()).catch(()=>[]);
-  document.getElementById('usersTable').innerHTML=u.length?u.map(x=>`<tr><td>${x.id}</td><td>${x.firstname} ${x.lastname}</td><td>${x.email}</td><td>${badge(x.role,x.role)}</td><td>${x.active?badge('active','active'):badge('pending','pending')}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.accepted)}</td><td>${USER.role==='admin'?`<button class="btn btn-danger btn-sm" onclick="deleteUser('${x.id}')">Delete</button>`:''}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">No users</td></tr>';
+  document.getElementById('usersTable').innerHTML=u.length?u.map(x=>`<tr><td>${x.id}</td><td>${esc(x.firstname)} ${esc(x.lastname)}</td><td>${esc(x.email)}</td><td>${badge(x.role,x.role)}</td><td>${x.active?badge('active','active'):badge('pending','pending')}</td><td class="mono">${ts(x.created)}</td><td class="mono">${ts(x.accepted)}</td><td>${USER.role==='admin'?`<button class="btn btn-danger btn-sm" onclick="deleteUser(decodeURIComponent(this.getAttribute('data-n')))" data-n="${encodeURIComponent(x.id)}">Delete</button>`:''}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">No users</td></tr>';
 }
 async function showInviteModal(){
   document.getElementById('invFirstname').value='';document.getElementById('invLastname').value='';
@@ -796,7 +803,7 @@ async function sendInvite(){
     document.getElementById('inviteResult').innerHTML=`<p class="ok">${msg}</p>`;
     if(role==='vpn')loadPeers();else loadUsers();
   }
-  else{const e=await r.json();document.getElementById('inviteResult').innerHTML=`<p class="err">${e.detail||'Failed'}</p>`}
+  else{const e=await r.json();document.getElementById('inviteResult').innerHTML=`<p class="err">${esc(e.detail||'Failed')}</p>`}
 }
 async function deleteUser(id){if(confirm('Delete user?')){await api(`/admin/users/${encodeURIComponent(id)}`,{method:'DELETE'});loadUsers()}}
 
@@ -837,7 +844,7 @@ function render2faStatus(peer){
       <option value="false"${reauth===false?' selected':''}>No — keep session</option>
     </select></label></div>`;
   }else{
-    el.innerHTML=`<button class="btn btn-sm btn-primary" onclick="setupVpn2fa(${peer.id},'${peer.name}')">Enable VPN 2FA</button>`;
+    el.innerHTML=`<button class="btn btn-sm btn-primary" onclick="setupVpn2fa(${peer.id},decodeURIComponent(this.getAttribute('data-n')))" data-n="${encodeURIComponent(peer.name)}">Enable VPN 2FA</button>`;
   }
 }
 async function setupVpn2fa(peerId,name){
@@ -871,7 +878,7 @@ let _groupsCache=[];
 async function populateGroupDropdown(selectId,selectedId){
   _groupsCache=await api('/wg/groups').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const sel=document.getElementById(selectId);
-  sel.innerHTML='<option value="0">(No group)</option>'+_groupsCache.map(g=>`<option value="${g.id}"${g.id===selectedId?' selected':''}>${g.name}${g.acl_profile_name?' — '+g.acl_profile_name:''}</option>`).join('');
+  sel.innerHTML='<option value="0">(No group)</option>'+_groupsCache.map(g=>`<option value="${g.id}"${g.id===selectedId?' selected':''}>${esc(g.name)}${g.acl_profile_name?' — '+esc(g.acl_profile_name):''}</option>`).join('');
 }
 function onPeerGroupChange(prefix){
   const groupId=parseInt(document.getElementById(prefix+'PeerGroup').value)||0;
@@ -885,7 +892,7 @@ async function loadGroups(){
   const grps=await api('/wg/groups').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const adm=USER&&USER.role==='admin';
   document.getElementById('groupsTable').innerHTML=grps.length?grps.map(g=>`<tr>
-    <td>${g.id}</td><td>${g.name}</td><td>${g.description||'-'}</td>
+    <td>${g.id}</td><td>${esc(g.name)}</td><td>${esc(g.description)||'-'}</td>
     <td>${g.acl_profile_name?badge(g.acl_profile_name,'all'):'-'}</td>
     <td>${g.peer_count||0}</td>
     <td class="mono">${ts(g.created)}</td>
@@ -930,15 +937,15 @@ async function doDeleteGroup(){
 async function populateAclDropdown(selectId,selectedId){
   const profiles=await api('/wg/acl-profiles').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const sel=document.getElementById(selectId);
-  sel.innerHTML='<option value="0">Default (Full Access)</option>'+profiles.map(p=>`<option value="${p.id}"${p.id===selectedId?' selected':''}>${p.name}</option>`).join('');
+  sel.innerHTML='<option value="0">Default (Full Access)</option>'+profiles.map(p=>`<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}</option>`).join('');
 }
 
 // -- Rule builder --
 function addFwRule(containerId,dest='',proto='any',ports='',action='accept'){
   const div=document.createElement('div');div.className='fw-rule';
-  div.innerHTML=`<input class="fw-dest" type="text" placeholder="0.0.0.0/0 or 10.0.0.0/8" value="${dest}">
+  div.innerHTML=`<input class="fw-dest" type="text" placeholder="0.0.0.0/0 or 10.0.0.0/8" value="${esc(dest)}">
     <select class="fw-proto" onchange="fwProtoChange(this)"><option value="any"${proto==='any'?' selected':''}>Any</option><option value="tcp"${proto==='tcp'?' selected':''}>TCP</option><option value="udp"${proto==='udp'?' selected':''}>UDP</option><option value="both"${proto==='both'?' selected':''}>TCP+UDP</option></select>
-    <input class="fw-ports" type="text" placeholder="80, 443" value="${ports}"${proto==='any'?' disabled':''}>
+    <input class="fw-ports" type="text" placeholder="80, 443" value="${esc(ports)}"${proto==='any'?' disabled':''}>
     <select class="fw-action"><option value="accept"${action==='accept'?' selected':''}>ACCEPT</option><option value="drop"${action==='drop'?' selected':''}>DROP</option></select>
     <button class="fw-rm" onclick="this.parentElement.remove()" title="Remove">&times;</button>`;
   document.getElementById(containerId).appendChild(div);
@@ -997,7 +1004,7 @@ function fmtFwRules(fwRules){
     let label=dest;
     if(ports)label+=` :${ports}/${proto}`;
     else if(proto)label+=` /${proto}`;
-    return`<span class="badge badge-${cls}" style="margin:1px" title="${action}">${label}</span>`;
+    return`<span class="badge badge-${cls}" style="margin:1px" title="${esc(action)}">${esc(label)}</span>`;
   }).join(' ');
 }
 
@@ -1012,8 +1019,8 @@ async function loadAclProfiles(){
   const profiles=await api('/wg/acl-profiles').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const adm=USER&&USER.role==='admin';
   document.getElementById('aclTable').innerHTML=profiles.length?profiles.map(p=>`<tr>
-    <td>${p.id}</td><td>${p.name}</td><td>${p.description||'-'}</td>
-    <td class="mono" style="font-size:.78rem">${p.allowed_ips}</td>
+    <td>${p.id}</td><td>${esc(p.name)}</td><td>${esc(p.description)||'-'}</td>
+    <td class="mono" style="font-size:.78rem">${esc(p.allowed_ips)}</td>
     <td style="font-size:.78rem">${fmtFwRules(p.fw_rules)}</td>
     <td>${p.peer_count||0}</td>
     <td>${p.is_default?badge('default','active'):'-'}</td>
@@ -1060,9 +1067,9 @@ async function loadSettings(){
   _settingsData=await api('/admin/settings').then(r=>r.ok?r.json():[]).catch(()=>[]);
   document.getElementById('settingsSaved').textContent='';
   document.getElementById('settingsForm').innerHTML=_settingsData.map(s=>`<div style="margin-bottom:1rem">
-    <label style="font-size:.85rem;color:#8b949e">${s.label}</label>
-    <input type="text" id="setting_${s.key}" value="${s.value||''}" placeholder="${s.default}" style="width:100%;padding:.5rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.9rem">
-    <p style="color:#6e7681;font-size:.78rem;margin-top:.2rem">${s.description}</p>
+    <label style="font-size:.85rem;color:#8b949e">${esc(s.label)}</label>
+    <input type="text" id="setting_${esc(s.key)}" value="${esc(s.value||'')}" placeholder="${esc(s.default)}" style="width:100%;padding:.5rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.9rem">
+    <p style="color:#6e7681;font-size:.78rem;margin-top:.2rem">${esc(s.description)}</p>
   </div>`).join('');
 }
 async function saveSettings(){
@@ -1085,11 +1092,11 @@ let _importUsers=[];
 async function loadIntegrations(){
   const rows=await api('/integrations').then(r=>r.ok?r.json():[]).catch(()=>[]);
   document.getElementById('integrationsTable').innerHTML=rows.length?rows.map(i=>`<tr>
-    <td>${i.id}</td><td>${i.provider_name}</td><td>${i.name}</td>
+    <td>${i.id}</td><td>${esc(i.provider_name)}</td><td>${esc(i.name)}</td>
     <td>${i.status==='connected'?badge('connected','enabled'):i.status==='error'?badge('error','disabled'):badge('pending','pending')}</td>
     <td class="mono">${ts(i.last_sync)}</td>
     <td style="white-space:nowrap">
-      ${i.status==='connected'?`<button class="btn btn-sm btn-primary" onclick="showImportUsers(${i.id},'${i.name}')">Sync & Import</button>`:''}
+      ${i.status==='connected'?`<button class="btn btn-sm btn-primary" onclick="showImportUsers(${i.id},decodeURIComponent(this.getAttribute('data-n')))" data-n="${encodeURIComponent(i.name)}">Sync & Import</button>`:''}
       <button class="btn btn-sm btn-danger" onclick="deleteIntegration(${i.id})">Delete</button>
     </td></tr>`).join(''):'<tr><td colspan="6" class="empty">No integrations configured</td></tr>';
 }
@@ -1097,7 +1104,7 @@ async function loadIntegrations(){
 async function showAddIntegration(){
   _integProviders=await api('/integrations/providers').then(r=>r.ok?r.json():[]).catch(()=>[]);
   const sel=document.getElementById('integProvider');
-  sel.innerHTML=_integProviders.map(p=>`<option value="${p.type}">${p.name}</option>`).join('');
+  sel.innerHTML=_integProviders.map(p=>`<option value="${esc(p.type)}">${esc(p.name)}</option>`).join('');
   document.getElementById('integName').value='';
   document.getElementById('integErr').textContent='';
   document.getElementById('integWizardStep1').style.display='';
@@ -1114,7 +1121,7 @@ function onProviderChange(){
   const redir=location.origin+'/integrations/0/callback';
   document.getElementById('integInstructions').innerHTML=(prov.setup_instructions||'').replace('{redirect_uri}',redir);
   document.getElementById('integConfigFields').innerHTML=(prov.config_fields||[]).map(f=>
-    `<label>${f.label}<input type="${f.type||'text'}" id="integCfg_${f.name}" placeholder="${f.placeholder||''}"></label>`
+    `<label>${esc(f.label)}<input type="${esc(f.type||'text')}" id="integCfg_${esc(f.name)}" placeholder="${esc(f.placeholder||'')}"></label>`
   ).join('');
 }
 
@@ -1167,17 +1174,17 @@ async function showImportUsers(id,name){
     api('/wg/interfaces').then(r=>r.ok?r.json():[]),
     api('/wg/groups').then(r=>r.ok?r.json():[]),
   ]);
-  document.getElementById('importIface').innerHTML=ifaces.map(i=>`<option value="${i.id}">${i.name} (${i.address})</option>`).join('');
-  document.getElementById('importGroup').innerHTML='<option value="0">(No group)</option>'+grps.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+  document.getElementById('importIface').innerHTML=ifaces.map(i=>`<option value="${i.id}">${esc(i.name)} (${esc(i.address)})</option>`).join('');
+  document.getElementById('importGroup').innerHTML='<option value="0">(No group)</option>'+grps.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
   showModal('importUsersModal');
   // Fetch users
   const r=await api(`/integrations/${id}/users`);
-  if(!r.ok){const e=await r.json();document.getElementById('importResult').innerHTML=`<span class="err">${e.detail||'Failed'}</span>`;return}
+  if(!r.ok){const e=await r.json();document.getElementById('importResult').innerHTML=`<span class="err">${esc(e.detail||'Failed')}</span>`;return}
   _importUsers=await r.json();
   document.getElementById('importResult').innerHTML='';
   document.getElementById('importUsersTable').innerHTML=_importUsers.length?_importUsers.map((u,i)=>`<tr>
     <td><input type="checkbox" class="import-cb" data-idx="${i}" ${u.already_imported?'disabled':'checked'}></td>
-    <td>${u.firstname} ${u.lastname}</td><td>${u.email}</td><td class="mono">${u.org_unit||'/'}</td>
+    <td>${esc(u.firstname)} ${esc(u.lastname)}</td><td>${esc(u.email)}</td><td class="mono">${esc(u.org_unit)||'/'}</td>
     <td>${u.already_imported?badge('imported','pending'):badge('new','enabled')}</td>
   </tr>`).join(''):'<tr><td colspan="5" class="empty">No users found</td></tr>';
 }
@@ -1203,7 +1210,7 @@ async function doImportUsers(){
     const res=await r.json();
     document.getElementById('importResult').innerHTML=`<span class="ok">${res.imported} users imported</span>`;
     document.getElementById('importBtn').style.display='none';
-  }else{const e=await r.json();document.getElementById('importResult').innerHTML=`<span class="err">${e.detail||'Failed'}</span>`}
+  }else{const e=await r.json();document.getElementById('importResult').innerHTML=`<span class="err">${esc(e.detail||'Failed')}</span>`}
 }
 
 // ── Init ──

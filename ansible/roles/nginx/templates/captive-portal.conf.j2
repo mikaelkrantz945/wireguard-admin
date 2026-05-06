@@ -1,5 +1,21 @@
 # Captive portal catch-all for VPN clients
 # Managed by Ansible
+
+{% if ssl_mode | default('local') == 'proxy' %}
+# Running behind external reverse proxy — HTTP only
+server {
+    listen {{ listen_port | default('80') }} default_server;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ api_port }};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    }
+}
+{% else %}
 server {
     listen 443 ssl default_server;
     server_name _;
@@ -17,3 +33,4 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+{% endif %}

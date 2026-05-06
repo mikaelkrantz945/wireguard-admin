@@ -14,6 +14,7 @@ from .hostbill.routes import router as hostbill_router
 from .integrations.routes import router as integrations_router
 from .portal import router as portal_router
 from .vpn2fa_routes import router as vpn2fa_router
+from .wireguard.import_routes import router as import_router
 from .middleware import RequestLogMiddleware
 from . import users, db
 
@@ -56,6 +57,7 @@ app.include_router(hostbill_router)
 app.include_router(integrations_router)
 app.include_router(portal_router)
 app.include_router(vpn2fa_router)
+app.include_router(import_router)
 
 # Serve admin UI
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

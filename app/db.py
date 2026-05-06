@@ -286,6 +286,12 @@ def init_schema():
                 END $$
             """)
             cur.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE wg_peers ADD COLUMN import_status TEXT DEFAULT NULL;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS vpn_auth_sessions (
                     id SERIAL PRIMARY KEY,
                     peer_id INTEGER NOT NULL,

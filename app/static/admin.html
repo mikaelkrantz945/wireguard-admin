@@ -140,6 +140,7 @@ tr:hover{background:#1c1f26}
     <button onclick="showTab('integrations',this)">Integrations</button>
     <button onclick="showTab('settings',this)">Settings</button>
     <button onclick="showTab('security',this)">Security</button>
+    <button onclick="showTab('import',this)" id="navImport" style="display:none">Import</button>
   </nav>
   <main>
     <!-- Dashboard -->
@@ -234,6 +235,29 @@ tr:hover{background:#1c1f26}
     <div class="tab" id="tab-security">
       <h3 style="margin-bottom:1rem">Two-Factor Authentication (2FA)</h3>
       <div id="totpStatus"></div>
+    </div>
+
+    <!-- Import WireGuard Configs -->
+    <div class="tab" id="tab-import">
+      <h3 style="margin-bottom:.5rem">Import WireGuard Configs</h3>
+      <p style="color:#8b949e;font-size:.85rem;margin-bottom:1rem">Scan for existing WireGuard configuration files on the server and import them into the database.</p>
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="importDetect()">Detect Configs</button>
+        <span id="importDetectStatus" style="color:#8b949e;font-size:.85rem"></span>
+      </div>
+      <table id="importDetectTable" style="display:none"><thead><tr><th>Interface</th><th>Address</th><th>Port</th><th>Peers</th><th>In DB</th><th></th></tr></thead><tbody id="importDetectBody"></tbody></table>
+
+      <div id="importResultSection" style="display:none;margin-top:1.5rem">
+        <h3 style="margin-bottom:.5rem">Import Result</h3>
+        <div id="importExecResult"></div>
+      </div>
+
+      <div style="margin-top:2rem">
+        <h3 style="margin-bottom:.5rem">Imported Peers</h3>
+        <p style="color:#8b949e;font-size:.85rem;margin-bottom:.5rem">Peers imported from config files. Link an email to enable portal access.</p>
+        <button class="btn btn-secondary" onclick="loadImportedPeers()" style="margin-bottom:.5rem">Refresh</button>
+        <table><thead><tr><th>ID</th><th>Name</th><th>Interface</th><th>IP</th><th>Status</th><th>Email</th><th></th></tr></thead><tbody id="importedPeersTable"></tbody></table>
+      </div>
     </div>
   </main>
 </div>
@@ -550,7 +574,7 @@ function badge(t,c){return`<span class="badge badge-${esc(c||t)}">${esc(t)}</spa
 function ts(s){return s?s.replace('T',' ').slice(0,19):'-'}
 function fmtBytes(b){if(!b||b===0)return'0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 function fmtHandshake(epoch){if(!epoch)return'-';const d=Math.floor(Date.now()/1000)-epoch;if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago'}
-function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,groups:loadGroups,acl:loadAclProfiles,keys:loadKeys,logs:loadLogs,users:loadUsers,integrations:loadIntegrations,settings:loadSettings,security:loadSecurity})[n]?.()}
+function showTab(n,b){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');if(b)b.classList.add('active');({dashboard:loadDashboard,peers:loadPeers,interfaces:loadInterfaces,groups:loadGroups,acl:loadAclProfiles,keys:loadKeys,logs:loadLogs,users:loadUsers,integrations:loadIntegrations,settings:loadSettings,security:loadSecurity,import:loadImportTab})[n]?.()}
 function showModal(id){document.getElementById(id).classList.add('show')}
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 
@@ -587,6 +611,7 @@ async function showApp(){
   pg('app');
   document.getElementById('userLabel').textContent=`${USER.firstname} ${USER.lastname} (${USER.role})`;
   document.getElementById('navUsers').style.display=USER.role==='admin'?'':'none';
+  document.getElementById('navImport').style.display=USER.role==='admin'?'':'none';
   document.getElementById('btnNewKey').style.display=USER.role==='admin'?'':'none';
   // Show API Keys tab only when HostBill is enabled
   const h=await fetch('/health').then(r=>r.json()).catch(()=>({}));
@@ -1213,6 +1238,107 @@ async function doImportUsers(){
     document.getElementById('importResult').innerHTML=`<span class="ok">${res.imported} users imported</span>`;
     document.getElementById('importBtn').style.display='none';
   }else{const e=await r.json();document.getElementById('importResult').innerHTML=`<span class="err">${esc(e.detail||'Failed')}</span>`}
+}
+
+// ── Import ──
+let _detectedConfigs=[];
+
+function loadImportTab(){
+  loadImportedPeers();
+}
+
+async function importDetect(){
+  document.getElementById('importDetectStatus').textContent='Scanning...';
+  document.getElementById('importDetectTable').style.display='none';
+  try{
+    const r=await api('/admin/import/detect');
+    if(!r.ok){const e=await r.json();document.getElementById('importDetectStatus').textContent=e.detail||'Failed';return}
+    const d=await r.json();
+    _detectedConfigs=d.configs||[];
+    document.getElementById('importDetectStatus').textContent=_detectedConfigs.length?`Found ${_detectedConfigs.length} config(s)`:'No configs found in /etc/wireguard';
+    if(_detectedConfigs.length){
+      document.getElementById('importDetectTable').style.display='';
+      document.getElementById('importDetectBody').innerHTML=_detectedConfigs.map(c=>{
+        if(c.error)return`<tr><td class="mono">${esc(c.name)}</td><td colspan="4"><span class="err">${esc(c.error)}</span></td><td></td></tr>`;
+        return`<tr>
+          <td class="mono">${esc(c.name)}</td>
+          <td class="mono">${esc(c.address||'-')}</td>
+          <td>${c.listen_port||'-'}</td>
+          <td>${c.peer_count||0}</td>
+          <td>${c.in_database?badge('yes','enabled'):badge('no','pending')}</td>
+          <td><button class="btn btn-sm btn-primary" onclick="importExecute(decodeURIComponent(this.getAttribute('data-n')))" data-n="${encodeURIComponent(c.name)}">Import</button></td>
+        </tr>`;
+      }).join('');
+    }
+  }catch(x){document.getElementById('importDetectStatus').textContent='Connection error'}
+}
+
+async function importExecute(ifaceName){
+  document.getElementById('importResultSection').style.display='';
+  document.getElementById('importExecResult').innerHTML='<span style="color:#8b949e">Importing '+esc(ifaceName)+'...</span>';
+  try{
+    const r=await api('/admin/import/execute',{method:'POST',body:JSON.stringify({interface_name:ifaceName})});
+    const d=await r.json();
+    if(!r.ok){document.getElementById('importExecResult').innerHTML=`<span class="err">${esc(d.detail||'Failed')}</span>`;return}
+    let html='';
+    if(d.interface){
+      html+=`<p style="margin-bottom:.5rem">Interface <strong>${esc(d.interface.name)}</strong>: ${esc(d.interface.action)}</p>`;
+    }
+    if(d.imported_peers&&d.imported_peers.length){
+      html+=`<p class="ok" style="margin-bottom:.3rem">${d.imported_peers.length} peer(s) imported</p>`;
+      html+=`<table style="margin-bottom:.5rem"><thead><tr><th>ID</th><th>Name</th><th>IP</th><th>Public Key</th></tr></thead><tbody>`;
+      html+=d.imported_peers.map(p=>`<tr><td>${p.id}</td><td>${esc(p.name)}</td><td class="mono">${esc(p.allowed_ips)}</td><td class="mono">${esc(p.public_key)}</td></tr>`).join('');
+      html+='</tbody></table>';
+    }
+    if(d.skipped_peers&&d.skipped_peers.length){
+      html+=`<p style="color:#d29922;margin-bottom:.3rem">${d.skipped_peers.length} peer(s) skipped</p>`;
+      html+=`<table style="margin-bottom:.5rem"><thead><tr><th>Name</th><th>Reason</th></tr></thead><tbody>`;
+      html+=d.skipped_peers.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.reason)}</td></tr>`).join('');
+      html+='</tbody></table>';
+    }
+    if(d.errors&&d.errors.length){
+      html+=`<p class="err" style="margin-bottom:.3rem">${d.errors.length} error(s)</p>`;
+      html+='<ul style="color:#f85149;font-size:.85rem;margin-left:1rem">';
+      html+=d.errors.map(e=>`<li>${esc(e)}</li>`).join('');
+      html+='</ul>';
+    }
+    if(!d.imported_peers?.length&&!d.skipped_peers?.length&&!d.errors?.length){
+      html+='<p style="color:#8b949e">No peers to import.</p>';
+    }
+    document.getElementById('importExecResult').innerHTML=html;
+    loadImportedPeers();
+  }catch(x){document.getElementById('importExecResult').innerHTML='<span class="err">Connection error</span>'}
+}
+
+async function loadImportedPeers(){
+  try{
+    const r=await api('/admin/import/peers');
+    if(!r.ok){document.getElementById('importedPeersTable').innerHTML='<tr><td colspan="7" class="empty">Failed to load</td></tr>';return}
+    const d=await r.json();
+    const peers=d.peers||[];
+    document.getElementById('importedPeersTable').innerHTML=peers.length?peers.map(p=>`<tr>
+      <td>${p.id}</td>
+      <td>${esc(p.name)}</td>
+      <td class="mono">${esc(p.interface_name)}</td>
+      <td class="mono">${esc(p.allowed_ips)}</td>
+      <td>${p.import_status==='linked'?badge('linked','enabled'):badge('imported','pending')}</td>
+      <td>${p.portal_email?esc(p.portal_email):`<input type="email" id="linkEmail_${p.id}" placeholder="user@example.com" style="padding:.25rem .4rem;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.82rem;width:180px">`}</td>
+      <td>${p.portal_email?'':`<button class="btn btn-sm btn-primary" onclick="doLinkEmail(${p.id})">Link</button>`}</td>
+    </tr>`).join(''):'<tr><td colspan="7" class="empty">No imported peers</td></tr>';
+  }catch(x){document.getElementById('importedPeersTable').innerHTML='<tr><td colspan="7" class="empty">Connection error</td></tr>'}
+}
+
+async function doLinkEmail(peerId){
+  const input=document.getElementById('linkEmail_'+peerId);
+  if(!input)return;
+  const email=input.value.trim();
+  if(!email){input.style.borderColor='#f85149';return}
+  input.style.borderColor='#333';
+  try{
+    const r=await api('/admin/import/link-email',{method:'POST',body:JSON.stringify({peer_id:peerId,email:email})});
+    if(r.ok){loadImportedPeers()}
+    else{const e=await r.json();alert(e.detail||'Failed to link email')}
+  }catch(x){alert('Connection error')}
 }
 
 // ── Init ──

@@ -182,6 +182,18 @@ def apply_firewall_rules(interface_name: str = "wg0"):
             capture_output=True, check=True
         )
 
+    # Block IPv6 forwarding for this WG interface (ACL only enforces IPv4)
+    check_v6 = subprocess.run(
+        ["ip6tables", "-C", "FORWARD", "-i", interface_name, "-j", "DROP"],
+        capture_output=True
+    )
+    if check_v6.returncode != 0:
+        subprocess.run(
+            ["ip6tables", "-I", "FORWARD", "1", "-i", interface_name, "-j", "DROP"],
+            capture_output=True
+        )
+        print(f"[fw] ip6tables: DROP all IPv6 forwarding for {interface_name}")
+
     # Ensure fallback ACCEPT for WG traffic (peers without ACL restrictions).
     # Must come after WG_2FA and WG_ACL in FORWARD chain.
     check_accept = subprocess.run(

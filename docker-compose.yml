@@ -66,6 +66,11 @@ services:
       - /etc/wireguard:/etc/wireguard
     cap_add:
       - NET_ADMIN
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # read_only: true  # Not feasible: app writes to /etc/wireguard
     logging:
       driver: "json-file"
       options:

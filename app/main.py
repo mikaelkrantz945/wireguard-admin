@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -137,8 +137,12 @@ class BootstrapRequest(BaseModel):
 
 
 @app.post("/admin/bootstrap")
-async def bootstrap(req: BootstrapRequest):
+async def bootstrap(req: BootstrapRequest, request: Request):
     """Create the first admin user. Only works when no users exist."""
+    # Only allow from localhost
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in ("127.0.0.1", "::1"):
+        raise HTTPException(403, "Bootstrap only allowed from localhost")
     existing = users.list_users()
     if existing:
         raise HTTPException(403, "Already bootstrapped — users exist")

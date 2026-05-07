@@ -3,7 +3,7 @@
 import json
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -53,11 +53,6 @@ def _mask_config(config: dict) -> dict:
 def _build_redirect_uri(request: Request, integration_id: int) -> str:
     """Build the canonical OAuth redirect URI from the request base URL."""
     return str(request.base_url).rstrip("/") + f"/integrations/{integration_id}/callback"
-
-
-# In-memory store for OAuth state tokens (maps state -> integration_id).
-# In a multi-process deployment, move this to the database or Redis.
-_oauth_states: dict[str, int] = {}
 
 
 def _validate_email(email: str) -> bool:
@@ -136,9 +131,15 @@ async def get_auth_url(integration_id: int, request: Request):
     config = _parse_json(integ["config"])
     redirect_uri = _build_redirect_uri(request, integration_id)
 
-    # Generate CSRF state token for OAuth flow
+    # Generate CSRF state token for OAuth flow, stored in DB
     state = secrets.token_urlsafe(32)
-    _oauth_states[state] = integration_id
+    now = datetime.utcnow().isoformat()
+    expires = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
+    db.execute("DELETE FROM oauth_states WHERE expires < %s", (now,))  # cleanup
+    db.execute(
+        "INSERT INTO oauth_states (state, integration_id, created, expires) VALUES (%s, %s, %s, %s)",
+        (state, integration_id, now, expires),
+    )
 
     url = provider.get_auth_url(config, redirect_uri, state=state)
     return {"auth_url": url, "redirect_uri": redirect_uri, "state": state}
@@ -159,10 +160,12 @@ async def oauth_callback(integration_id: int, request: Request):
 
     # Validate OAuth state parameter to prevent CSRF
     state = body.get("state", "")
-    if not state or state not in _oauth_states:
-        raise HTTPException(400, "Invalid or missing OAuth state parameter")
-    expected_integration_id = _oauth_states.pop(state)
-    if expected_integration_id != integration_id:
+    now = datetime.utcnow().isoformat()
+    row = db.fetchone("SELECT integration_id FROM oauth_states WHERE state = %s AND expires > %s", (state, now))
+    if not row:
+        raise HTTPException(400, "Invalid or expired OAuth state")
+    db.execute("DELETE FROM oauth_states WHERE state = %s", (state,))  # one-time use
+    if row["integration_id"] != integration_id:
         raise HTTPException(400, "OAuth state does not match integration")
 
     # Always use canonical redirect_uri — never accept it from the client

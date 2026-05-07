@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from . import db, vpn2fa
 from .admin import _require_admin
 from .password import hash_password as _hash_portal_password, verify_password
+from .ratelimit import rate_limit_ip, rate_limit_account
 from .wireguard import peers as peer_ops, acl
 
 router = APIRouter(prefix="/portal", tags=["Portal"])
@@ -109,8 +110,9 @@ class ActivateGoogleRequest(BaseModel):
 
 
 @router.post("/activate/password")
-async def activate_with_password(req: ActivatePasswordRequest):
+async def activate_with_password(req: ActivatePasswordRequest, request: Request):
     """Activate account and set password. Also handles HostBill setup-password (already activated)."""
+    rate_limit_ip(request)
     token_hash = _hash(req.token)
     # Try inactive peer first (normal activation)
     peer = db.fetchone(
@@ -147,8 +149,9 @@ async def activate_with_password(req: ActivatePasswordRequest):
 
 
 @router.post("/activate/google")
-async def activate_with_google(req: ActivateGoogleRequest):
+async def activate_with_google(req: ActivateGoogleRequest, request: Request):
     """Activate account via Google (just marks as activated)."""
+    rate_limit_ip(request)
     token_hash = _hash(req.token)
     peer = db.fetchone(
         "SELECT * FROM wg_peers WHERE activation_token = %s AND activated = FALSE",
@@ -206,8 +209,10 @@ def _validate_portal_redirect_uri(redirect_uri: str) -> str:
 
 
 @router.post("/auth/login")
-async def portal_login(req: PortalLoginRequest):
+async def portal_login(req: PortalLoginRequest, request: Request):
     """Login with portal email + password."""
+    rate_limit_ip(request)
+    rate_limit_account(req.email)
     peer = db.fetchone(
         "SELECT * FROM wg_peers WHERE portal_email = %s AND portal_password_hash != ''",
         (req.email,),

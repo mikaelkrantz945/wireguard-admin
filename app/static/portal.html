@@ -360,7 +360,7 @@ async function doPortalPreAuth(){
   }catch(e){document.getElementById('portalPreAuthErr').textContent='Connection error'}
 }
 async function setupPortal2fa(){
-  const r=await api(`/vpn-auth/setup/${PEER.id}`,{method:'POST'});
+  const r=await api('/vpn-auth/portal/setup',{method:'POST'});
   if(!r.ok){alert('Failed');return}
   const d=await r.json();
   document.getElementById('portal2faQr').src=d.qr_code;
@@ -373,13 +373,13 @@ async function setupPortal2fa(){
 function closePortal2faModal(){document.getElementById('portal2faModal').style.display='none'}
 async function doPortalEnable2fa(){
   const code=document.getElementById('portal2faCode').value;
-  const r=await api(`/vpn-auth/enable/${PEER.id}`,{method:'POST',body:JSON.stringify({secret:window._p2faSecret,code:code})});
+  const r=await api('/vpn-auth/portal/enable',{method:'POST',body:JSON.stringify({secret:window._p2faSecret,code:code})});
   if(r.ok){closePortal2faModal();loadPortal2faStatus()}
   else{const e=await r.json();document.getElementById('portal2faErr').textContent=e.detail||'Invalid code'}
 }
 async function doPortalDisable2fa(){
   if(!confirm('Disable VPN 2FA?'))return;
-  await api(`/vpn-auth/disable/${PEER.id}`,{method:'POST'});
+  await api('/vpn-auth/portal/disable',{method:'POST'});
   loadPortal2faStatus();
 }
 

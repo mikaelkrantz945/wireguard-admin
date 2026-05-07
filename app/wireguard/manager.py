@@ -10,9 +10,12 @@ import qrcode
 from ..config import settings
 
 
-_POSTUP_ALLOWED = re.compile(
-    r'^(iptables|ip6tables)\s+-[ADI]\s+(FORWARD|POSTROUTING|INPUT)\b.*$'
-)
+_POSTUP_ALLOWED = [
+    re.compile(r'^iptables\s+-[AD]\s+FORWARD\s+-i\s+%i\s+-j\s+ACCEPT$'),
+    re.compile(r'^iptables\s+-t\s+nat\s+-[AD]\s+POSTROUTING\s+-o\s+\S+\s+-j\s+MASQUERADE$'),
+    re.compile(r'^ip6tables\s+-[AD]\s+FORWARD\s+-i\s+%i\s+-j\s+ACCEPT$'),
+    re.compile(r'^ip6tables\s+-t\s+nat\s+-[AD]\s+POSTROUTING\s+-o\s+\S+\s+-j\s+MASQUERADE$'),
+]
 
 
 def _safe_iface_name(name: str) -> str:
@@ -28,7 +31,7 @@ def _safe_post_script(script: str) -> str:
         return script
     commands = [cmd.strip() for cmd in script.split(";") if cmd.strip()]
     for cmd in commands:
-        if not _POSTUP_ALLOWED.match(cmd):
+        if not any(p.match(cmd) for p in _POSTUP_ALLOWED):
             raise ValueError(f"Refusing to write disallowed command to config: {cmd[:80]}")
     return script
 

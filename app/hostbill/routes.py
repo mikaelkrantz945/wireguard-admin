@@ -3,11 +3,12 @@
 import hmac
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..config import settings
 from ..password import hash_password
+from ..ratelimit import rate_limit_ip
 from .. import db
 from ..wireguard import peers
 
@@ -39,8 +40,9 @@ def _verify_secret(secret: str):
 
 
 @router.post("/provision")
-async def provision(req: ProvisionRequest):
+async def provision(req: ProvisionRequest, request: Request):
     """Handle HostBill Script Provisioning actions."""
+    rate_limit_ip(request)
     _check_enabled()
     _verify_secret(req.secret)
 

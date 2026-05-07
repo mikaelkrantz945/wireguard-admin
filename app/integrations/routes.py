@@ -243,11 +243,14 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
             continue
 
         try:
+            # Per-user group_id overrides the global default
+            user_group = user.get("group_id")
+            group_id = int(user_group) if user_group is not None else req.group_id
             result = peers.create_peer(
                 interface_id=req.interface_id,
                 name=name,
                 note=email,
-                group_id=req.group_id,
+                group_id=group_id,
                 enabled=False,
             )
             peer_id = result["peer"]["id"]

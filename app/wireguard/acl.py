@@ -169,14 +169,15 @@ def apply_firewall_rules(interface_name: str = "wg0"):
     # Flush existing rules
     subprocess.run(["iptables", "-F", "WG_ACL"], capture_output=True, check=True)
 
-    # Ensure FORWARD jump to WG_ACL exists for this interface
+    # Ensure FORWARD jump to WG_ACL exists for this interface.
+    # Use -A (append) so WG_ACL comes AFTER WG_2FA chains (which use -I FORWARD 1).
     check = subprocess.run(
         ["iptables", "-C", "FORWARD", "-i", interface_name, "-j", "WG_ACL"],
         capture_output=True
     )
     if check.returncode != 0:
         subprocess.run(
-            ["iptables", "-I", "FORWARD", "1", "-i", interface_name, "-j", "WG_ACL"],
+            ["iptables", "-A", "FORWARD", "-i", interface_name, "-j", "WG_ACL"],
             capture_output=True, check=True
         )
 

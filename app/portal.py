@@ -9,11 +9,11 @@ from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
-from . import db
+from . import db, vpn2fa
 from .admin import _require_admin
 from .password import hash_password as _hash_portal_password, verify_password
 from .wireguard import peers as peer_ops, acl
@@ -361,3 +361,66 @@ async def google_enabled():
         # Note: client_id is intentionally public — needed for OAuth redirect on frontend.
         # client_secret and tokens are NEVER returned in this response.
     }
+
+
+# -- Portal 2FA pre-auth endpoints --
+
+class Portal2faVerifyRequest(BaseModel):
+    code: str
+
+
+@router.post("/2fa/verify")
+async def portal_verify_2fa(req: Portal2faVerifyRequest, request: Request):
+    """Verify TOTP code from portal for VPN pre-auth. Creates a pending auth session."""
+    token = request.headers.get("X-API-Key", "")
+    peer = _verify_portal_session(token)
+    if not peer:
+        raise HTTPException(401, "Not authenticated")
+    if not peer.get("require_2fa") or not peer.get("totp_secret"):
+        raise HTTPException(400, "2FA not enabled for this peer")
+
+    # Verify TOTP
+    import pyotp
+    if not pyotp.TOTP(peer["totp_secret"]).verify(req.code, valid_window=1):
+        raise HTTPException(401, "Invalid 2FA code")
+
+    # Create pre-auth session (peer_ip is 'pending' until VPN connects)
+    now = datetime.utcnow().isoformat()
+    hours = vpn2fa._session_hours()
+    expires = (datetime.utcnow() + timedelta(hours=hours)).isoformat()
+
+    # Store pre-auth in vpn_auth_sessions with peer_ip='pending'
+    db.execute("DELETE FROM vpn_auth_sessions WHERE peer_id = %s", (peer["id"],))
+    db.execute(
+        "INSERT INTO vpn_auth_sessions (peer_id, peer_ip, expires, created, last_endpoint) VALUES (%s, %s, %s, %s, %s)",
+        (peer["id"], "pending", expires, now, ""),
+    )
+
+    return {
+        "authenticated": True,
+        "mode": "portal_preauth",
+        "expires": expires,
+        "peer_name": peer["name"],
+        "message": "2FA verified. Connect your VPN now — access will be granted automatically.",
+    }
+
+
+@router.get("/2fa/status")
+async def portal_2fa_status(request: Request):
+    """Check if current portal user has pending or active 2FA session."""
+    token = request.headers.get("X-API-Key", "")
+    peer = _verify_portal_session(token)
+    if not peer:
+        raise HTTPException(401, "Not authenticated")
+    session = db.fetchone(
+        "SELECT * FROM vpn_auth_sessions WHERE peer_id = %s AND expires > %s",
+        (peer["id"], datetime.utcnow().isoformat()),
+    )
+    if session:
+        return {
+            "has_session": True,
+            "peer_ip": session["peer_ip"],
+            "expires": session["expires"],
+            "is_pending": session["peer_ip"] == "pending",
+        }
+    return {"has_session": False}

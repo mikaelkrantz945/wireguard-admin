@@ -55,6 +55,11 @@ SETTING_DEFS = {
         "default": "12",
         "description": "How long a VPN 2FA session lasts before re-authentication is required",
     },
+    "vpn_2fa_mode": {
+        "label": "VPN 2FA Mode",
+        "default": "captive",
+        "description": "How VPN 2FA works: 'captive' = redirect to captive portal after VPN connect (requires HTTP access). 'portal' = user verifies TOTP in portal web UI before connecting VPN (works for SSH-only users). Set to 'portal' or 'captive'",
+    },
     "vpn_2fa_reauth_on_reconnect": {
         "label": "Require 2FA re-auth on reconnect (global)",
         "default": "false",

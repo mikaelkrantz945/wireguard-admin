@@ -294,14 +294,70 @@ async function showApp(){
 }
 
 // 2FA management
+let _2faStatusPollTimer=null;
 async function loadPortal2faStatus(){
   const me=await api('/portal/me').then(r=>r.json());
   const el=document.getElementById('portal2faStatus');
+  if(_2faStatusPollTimer){clearInterval(_2faStatusPollTimer);_2faStatusPollTimer=null}
   if(me.require_2fa){
-    el.innerHTML='<p style="color:#3fb950;margin-bottom:.5rem">2FA is enabled for your VPN connection.</p><p style="color:#8b949e;font-size:.82rem">You will need to authenticate with your TOTP code each time your session expires.</p><button class="btn-sm" style="background:#da3633;color:#fff;margin-top:.5rem" onclick="doPortalDisable2fa()">Disable 2FA</button>';
+    // Check for active/pending pre-auth session
+    let sessionHtml='';
+    try{
+      const sr=await api('/portal/2fa/status').then(r=>r.json());
+      if(sr.has_session&&sr.is_pending){
+        sessionHtml='<div style="background:#1f3b2f;border:1px solid #238636;border-radius:6px;padding:.8rem;margin-top:.7rem">'
+          +'<p style="color:#3fb950;font-weight:600;margin-bottom:.3rem">2FA verified — connect your VPN now</p>'
+          +'<p style="color:#8b949e;font-size:.82rem">Waiting for VPN connection... Access will be granted automatically.</p>'
+          +'<p style="color:#8b949e;font-size:.78rem;margin-top:.3rem" id="preauthExpires">Expires: '+sr.expires+'</p>'
+          +'</div>';
+        // Start polling to detect when VPN connects and session resolves
+        _2faStatusPollTimer=setInterval(async()=>{
+          try{
+            const ps=await api('/portal/2fa/status').then(r=>r.json());
+            if(ps.has_session&&!ps.is_pending){
+              clearInterval(_2faStatusPollTimer);_2faStatusPollTimer=null;
+              loadPortal2faStatus();
+            }else if(!ps.has_session){
+              clearInterval(_2faStatusPollTimer);_2faStatusPollTimer=null;
+              loadPortal2faStatus();
+            }
+          }catch(e){}
+        },5000);
+      }else if(sr.has_session&&!sr.is_pending){
+        sessionHtml='<div style="background:#1f3b2f;border:1px solid #238636;border-radius:6px;padding:.8rem;margin-top:.7rem">'
+          +'<p style="color:#3fb950;font-weight:600;margin-bottom:.3rem">VPN access granted</p>'
+          +'<p style="color:#8b949e;font-size:.82rem">Your 2FA session is active. VPN IP: '+sr.peer_ip+'</p>'
+          +'<p style="color:#8b949e;font-size:.78rem;margin-top:.3rem">Expires: '+sr.expires+'</p>'
+          +'</div>';
+      }
+    }catch(e){}
+    el.innerHTML='<p style="color:#3fb950;margin-bottom:.5rem">2FA is enabled for your VPN connection.</p>'
+      +'<p style="color:#8b949e;font-size:.82rem">You will need to authenticate with your TOTP code each time your session expires.</p>'
+      +sessionHtml
+      +'<div style="margin-top:.7rem">'
+      +'<div id="portal2faVerifySection">'
+      +'<p style="color:#8b949e;font-size:.85rem;margin-bottom:.4rem">Enter your 6-digit TOTP code to pre-authenticate:</p>'
+      +'<div style="display:flex;gap:.5rem;align-items:center">'
+      +'<input type="text" id="portalPreAuthCode" placeholder="000000" maxlength="6" style="width:140px;text-align:center;font-size:1.2rem;letter-spacing:.3rem">'
+      +'<button class="btn-sm btn" onclick="doPortalPreAuth()" style="width:auto;padding:.5rem 1rem">Verify</button>'
+      +'</div>'
+      +'<p class="err" id="portalPreAuthErr" style="font-size:.82rem"></p>'
+      +'</div>'
+      +'</div>'
+      +'<button class="btn-sm" style="background:#da3633;color:#fff;margin-top:.7rem" onclick="doPortalDisable2fa()">Disable 2FA</button>';
   }else{
     el.innerHTML='<p style="color:#8b949e;margin-bottom:.5rem">2FA is not enabled. Enable it to require authentication after connecting to VPN.</p><button class="btn-sm btn" onclick="setupPortal2fa()">Enable VPN 2FA</button>';
   }
+}
+async function doPortalPreAuth(){
+  const code=document.getElementById('portalPreAuthCode').value.trim();
+  if(!code||code.length<6){document.getElementById('portalPreAuthErr').textContent='Enter a 6-digit code';return}
+  try{
+    const r=await api('/portal/2fa/verify',{method:'POST',body:JSON.stringify({code:code})});
+    if(!r.ok){const e=await r.json();document.getElementById('portalPreAuthErr').textContent=e.detail||'Invalid code';return}
+    document.getElementById('portalPreAuthErr').textContent='';
+    loadPortal2faStatus();
+  }catch(e){document.getElementById('portalPreAuthErr').textContent='Connection error'}
 }
 async function setupPortal2fa(){
   const r=await api(`/vpn-auth/setup/${PEER.id}`,{method:'POST'});

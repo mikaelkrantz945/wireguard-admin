@@ -221,6 +221,9 @@ def apply_2fa_rules(interface_name: str = "wg0"):
     iface = db.fetchone("SELECT address FROM wg_interfaces WHERE name = %s", (interface_name,))
     server_ip = iface["address"].split("/")[0] if iface else "172.19.1.1"
 
+    # Check 2FA mode: 'captive' (default) or 'portal'
+    tfa_mode = get_setting("vpn_2fa_mode") or "captive"
+
     unauth_ips = []
     for peer in peers_2fa:
         peer_ip = peer["allowed_ips"].split("/")[0]
@@ -233,7 +236,7 @@ def apply_2fa_rules(interface_name: str = "wg0"):
             )
         else:
             unauth_ips.append(peer_ip)
-            # Allow traffic to VPN server IP (for captive portal)
+            # Allow traffic to VPN server IP (for captive portal / API access)
             subprocess.run(
                 ["iptables", "-A", chain, "-s", peer_ip, "-d", server_ip, "-j", "ACCEPT"],
                 capture_output=True,
@@ -243,25 +246,32 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 ["iptables", "-A", chain, "-s", peer_ip, "-p", "udp", "--dport", "53", "-j", "ACCEPT"],
                 capture_output=True,
             )
-            # Allow HTTP outbound (will be NAT-redirected to captive portal)
-            subprocess.run(
-                ["iptables", "-A", chain, "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
-                capture_output=True,
-            )
-            # Allow HTTPS outbound (will be NAT-redirected to nginx with SSL)
-            subprocess.run(
-                ["iptables", "-A", chain, "-s", peer_ip, "-p", "tcp", "--dport", "443", "-j", "ACCEPT"],
-                capture_output=True,
-            )
+            if tfa_mode == "captive":
+                # Captive mode: allow HTTP/HTTPS outbound (will be NAT-redirected to captive portal)
+                subprocess.run(
+                    ["iptables", "-A", chain, "-s", peer_ip, "-p", "tcp", "--dport", "80", "-j", "ACCEPT"],
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["iptables", "-A", chain, "-s", peer_ip, "-p", "tcp", "--dport", "443", "-j", "ACCEPT"],
+                    capture_output=True,
+                )
+            # Portal mode: no HTTP/HTTPS ACCEPT needed — user authenticates via portal before VPN connect
             # REJECT everything else (fast fail, not timeout)
             subprocess.run(
                 ["iptables", "-A", chain, "-s", peer_ip, "-j", "REJECT", "--reject-with", "icmp-port-unreachable"],
                 capture_output=True,
             )
 
-    # NAT: redirect HTTP from unauthenticated peers to captive portal
-    api_port = "8092"
-    _ensure_captive_nat(server_ip, api_port, unauth_ips, interface_name)
+    if tfa_mode == "captive":
+        # NAT: redirect HTTP from unauthenticated peers to captive portal
+        api_port = "8092"
+        _ensure_captive_nat(server_ip, api_port, unauth_ips, interface_name)
+    else:
+        # Portal mode: ensure NAT chain is flushed (no DNAT redirects needed)
+        nat_chain = f"WG_2FA_NAT_{interface_name}"
+        subprocess.run(["iptables", "-t", "nat", "-N", nat_chain], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-F", nat_chain], capture_output=True)
 
 
 def _ensure_captive_nat(server_ip: str, api_port: str, unauth_ips: list[str], interface_name: str):
@@ -418,6 +428,37 @@ def check_reconnects():
             )
 
     return invalidated
+
+
+def resolve_pending_preauths():
+    """Match pending pre-auth sessions to connected VPN peers and open iptables."""
+    pending = db.fetchall(
+        "SELECT * FROM vpn_auth_sessions WHERE peer_ip = 'pending' AND expires > %s",
+        (datetime.utcnow().isoformat(),),
+    )
+    for session in pending:
+        peer = db.fetchone("SELECT * FROM wg_peers WHERE id = %s", (session["peer_id"],))
+        if not peer:
+            continue
+        peer_ip = peer["allowed_ips"].split("/")[0]
+
+        # Check if this peer is currently connected to WireGuard
+        iface_row = db.fetchone(
+            "SELECT i.name FROM wg_interfaces i WHERE i.id = %s", (peer["interface_id"],)
+        )
+        iface_name = iface_row["name"] if iface_row else "wg0"
+
+        endpoint = _get_peer_endpoint(peer_ip, iface_name)
+        if not endpoint:
+            continue  # Peer not connected yet
+
+        # Peer is connected! Update session with real IP and open iptables
+        db.execute(
+            "UPDATE vpn_auth_sessions SET peer_ip = %s, last_endpoint = %s WHERE id = %s",
+            (peer_ip, endpoint, session["id"]),
+        )
+        _open_peer(peer_ip, iface_name)
+        print(f"[2fa-preauth] Resolved pending session for peer {peer['name']} ({peer_ip})")
 
 
 def cleanup_expired_sessions():

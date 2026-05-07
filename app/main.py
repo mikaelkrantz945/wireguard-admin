@@ -40,9 +40,10 @@ async def startup():
         await asyncio.sleep(30)  # Wait for startup
         while True:
             try:
-                from .vpn2fa import cleanup_expired_sessions, apply_2fa_rules, check_reconnects
+                from .vpn2fa import cleanup_expired_sessions, apply_2fa_rules, check_reconnects, resolve_pending_preauths
                 cleanup_expired_sessions()
                 check_reconnects()
+                resolve_pending_preauths()
                 ifaces = db.fetchall("SELECT name FROM wg_interfaces")
                 for iface in ifaces:
                     apply_2fa_rules(iface["name"])

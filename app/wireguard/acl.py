@@ -181,6 +181,18 @@ def apply_firewall_rules(interface_name: str = "wg0"):
             capture_output=True, check=True
         )
 
+    # Ensure fallback ACCEPT for WG traffic (peers without ACL restrictions).
+    # Must come after WG_2FA and WG_ACL in FORWARD chain.
+    check_accept = subprocess.run(
+        ["iptables", "-C", "FORWARD", "-i", interface_name, "-j", "ACCEPT"],
+        capture_output=True
+    )
+    if check_accept.returncode != 0:
+        subprocess.run(
+            ["iptables", "-A", "FORWARD", "-i", interface_name, "-j", "ACCEPT"],
+            capture_output=True, check=True
+        )
+
     # Get all enabled peers with their ACL profiles
     peers = db.fetchall("SELECT * FROM wg_peers WHERE enabled = TRUE")
 

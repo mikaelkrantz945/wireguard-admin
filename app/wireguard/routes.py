@@ -14,20 +14,23 @@ from . import manager, ipam, peers, status, acl, groups
 
 # -- Input validation helpers --
 
-_POSTUP_ALLOWED = re.compile(
-    r'^(iptables|ip6tables)\s+-[ADI]\s+(FORWARD|POSTROUTING|INPUT)\b.*$'
-)
+_POSTUP_ALLOWED = [
+    re.compile(r'^iptables\s+-[AD]\s+FORWARD\s+-i\s+%i\s+-j\s+ACCEPT$'),
+    re.compile(r'^iptables\s+-t\s+nat\s+-[AD]\s+POSTROUTING\s+-o\s+\S+\s+-j\s+MASQUERADE$'),
+    re.compile(r'^ip6tables\s+-[AD]\s+FORWARD\s+-i\s+%i\s+-j\s+ACCEPT$'),
+    re.compile(r'^ip6tables\s+-t\s+nat\s+-[AD]\s+POSTROUTING\s+-o\s+\S+\s+-j\s+MASQUERADE$'),
+]
 
 _VALID_IFACE_NAME = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{0,14}$')
 
 
 def _validate_post_script(script: str, field_name: str) -> str:
-    """Validate PostUp/PostDown commands. Only allow iptables/ip6tables rules."""
+    """Validate PostUp/PostDown commands. Only allow FORWARD ACCEPT and NAT MASQUERADE."""
     if not script or not script.strip():
         return ""
     commands = [cmd.strip() for cmd in script.split(";") if cmd.strip()]
     for cmd in commands:
-        if not _POSTUP_ALLOWED.match(cmd):
+        if not any(pattern.match(cmd) for pattern in _POSTUP_ALLOWED):
             raise ValueError(
                 f"{field_name} contains disallowed command: {cmd[:80]}. "
                 "Only iptables/ip6tables rules allowed."

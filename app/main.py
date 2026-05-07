@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .config import settings
+from .ratelimit import rate_limit_ip
 from .admin import router as admin_router
 from .wireguard.routes import router as wg_router
 from .hostbill.routes import router as hostbill_router
@@ -139,6 +140,7 @@ class BootstrapRequest(BaseModel):
 @app.post("/admin/bootstrap")
 async def bootstrap(req: BootstrapRequest, request: Request):
     """Create the first admin user. Only works when no users exist."""
+    rate_limit_ip(request)
     # Only allow from localhost
     client_ip = request.client.host if request.client else ""
     if client_ip not in ("127.0.0.1", "::1"):

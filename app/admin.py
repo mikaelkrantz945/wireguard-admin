@@ -1,10 +1,11 @@
 """Admin endpoints — auth, user management, key management, logs."""
 
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 from . import keystore, logger, users
+from .ratelimit import rate_limit_ip, rate_limit_account
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -58,7 +59,9 @@ class EnableTotpRequest(BaseModel):
 
 
 @router.post("/auth/login")
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
+    rate_limit_ip(request)
+    rate_limit_account(req.email)
     result = users.login(req.email, req.password, req.totp_code)
     if not result:
         raise HTTPException(401, "Invalid email, password, or 2FA code")

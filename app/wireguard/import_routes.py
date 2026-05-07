@@ -74,7 +74,9 @@ async def link_email(req: LinkEmailRequest):
     if req.send_activation:
         from ..portal import send_activation_email
         try:
-            send_activation_email(req.peer_id, req.activation_method, req.email)
+            peer = db.fetchone("SELECT name FROM wg_peers WHERE id = %s", (req.peer_id,))
+            peer_name = peer["name"] if peer else ""
+            send_activation_email(req.peer_id, req.email, peer_name, req.activation_method)
             result["activation_sent"] = True
         except Exception as e:
             result["activation_sent"] = False

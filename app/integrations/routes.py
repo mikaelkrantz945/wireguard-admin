@@ -226,11 +226,6 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
     if not iface:
         raise HTTPException(400, "Interface not found")
 
-    from ..portal import send_activation_email
-
-    # Determine activation method based on provider
-    activation_method = "google" if integ["provider"] == "google_workspace" else "password"
-
     results = []
     for user in req.users:
         email = user.get("email", "").strip()
@@ -256,9 +251,13 @@ async def import_users(integration_id: int, req: ImportUsersRequest):
                 enabled=False,
             )
             peer_id = result["peer"]["id"]
-            # Peer created as disabled — send activation email
-            send_activation_email(peer_id, email, name, activation_method)
-            results.append({"email": email, "status": "created", "peer_id": peer_id, "activation_sent": True})
+            # Set portal email — invite is NOT sent automatically.
+            # Admin sends invite manually via Users tab or /portal/send-activation.
+            db.execute(
+                "UPDATE wg_peers SET portal_email = %s WHERE id = %s",
+                (email, peer_id),
+            )
+            results.append({"email": email, "status": "created", "peer_id": peer_id})
         except Exception as e:
             results.append({"email": email, "status": "error", "reason": str(e)})
 

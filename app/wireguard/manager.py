@@ -1,5 +1,6 @@
 """WireGuard config generation, key management, and wg command execution."""
 
+import re
 import subprocess
 import os
 import io
@@ -7,6 +8,29 @@ import base64
 import qrcode
 
 from ..config import settings
+
+
+_POSTUP_ALLOWED = re.compile(
+    r'^(iptables|ip6tables)\s+-[ADI]\s+(FORWARD|POSTROUTING|INPUT)\b.*$'
+)
+
+
+def _safe_iface_name(name: str) -> str:
+    """Validate interface name before use in paths/commands."""
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]{0,14}$', name):
+        raise ValueError(f"Invalid interface name: {name}")
+    return name
+
+
+def _safe_post_script(script: str) -> str:
+    """Defense-in-depth: validate PostUp/PostDown before writing to config."""
+    if not script or not script.strip():
+        return script
+    commands = [cmd.strip() for cmd in script.split(";") if cmd.strip()]
+    for cmd in commands:
+        if not _POSTUP_ALLOWED.match(cmd):
+            raise ValueError(f"Refusing to write disallowed command to config: {cmd[:80]}")
+    return script
 
 
 def generate_keypair() -> tuple[str, str]:
@@ -23,13 +47,16 @@ def generate_preshared_key() -> str:
 
 def write_server_config(interface: dict, peers: list[dict]):
     """Write a complete wg config file for the given interface and its enabled peers."""
+    _safe_iface_name(interface['name'])
     lines = ["[Interface]"]
     lines.append(f"PrivateKey = {interface['private_key']}")
     lines.append(f"Address = {interface['address']}")
     lines.append(f"ListenPort = {interface['listen_port']}")
     if interface.get("post_up"):
+        _safe_post_script(interface['post_up'])
         lines.append(f"PostUp = {interface['post_up']}")
     if interface.get("post_down"):
+        _safe_post_script(interface['post_down'])
         lines.append(f"PostDown = {interface['post_down']}")
     lines.append("")
 
@@ -82,6 +109,7 @@ def generate_qr(config_text: str) -> str:
 
 def apply_config(interface_name: str):
     """Apply config changes using wg syncconf for zero-downtime reload."""
+    _safe_iface_name(interface_name)
     try:
         # wg-quick strip removes [Interface] section, keeping only peers
         strip_result = subprocess.run(
@@ -102,6 +130,7 @@ def apply_config(interface_name: str):
 
 def interface_up(interface_name: str):
     """Bring a WireGuard interface up."""
+    _safe_iface_name(interface_name)
     try:
         subprocess.run(
             ["wg-quick", "up", interface_name],
@@ -113,6 +142,7 @@ def interface_up(interface_name: str):
 
 def interface_down(interface_name: str):
     """Bring a WireGuard interface down."""
+    _safe_iface_name(interface_name)
     try:
         subprocess.run(
             ["wg-quick", "down", interface_name],

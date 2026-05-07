@@ -1,6 +1,7 @@
 """HostBill Script Provisioning webhook endpoint."""
 
 import hmac
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ class ProvisionRequest(BaseModel):
     client_name: str = ""
     package: str = ""
     custom_fields: dict = {}
+    timestamp: str = ""
 
 
 def _check_enabled():
@@ -41,6 +43,15 @@ async def provision(req: ProvisionRequest):
     """Handle HostBill Script Provisioning actions."""
     _check_enabled()
     _verify_secret(req.secret)
+
+    # Replay protection: reject requests with timestamps older than 5 minutes
+    if hasattr(req, 'timestamp') and req.timestamp:
+        try:
+            req_time = datetime.fromisoformat(req.timestamp)
+            if abs((datetime.utcnow() - req_time).total_seconds()) > 300:
+                raise HTTPException(400, "Request timestamp expired (>5 min)")
+        except ValueError:
+            pass  # If no valid timestamp, allow (backward compatibility)
 
     action = req.action.lower()
 
@@ -66,7 +77,7 @@ def _create(req: ProvisionRequest) -> dict:
         (req.service_id,)
     )
     if existing:
-        raise HTTPException(400, f"Peer already exists for service {req.service_id}")
+        return {"success": True, "action": "create", "note": "already exists", "peer_id": existing["id"]}
 
     # Use first available interface (wg0)
     iface = db.fetchone("SELECT * FROM wg_interfaces ORDER BY id LIMIT 1")

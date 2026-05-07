@@ -1,5 +1,6 @@
 """WireGuard API endpoints."""
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +10,40 @@ from ..auth import verify_wireguard
 from ..password import hash_password
 from .. import db
 from . import manager, ipam, peers, status, acl, groups
+
+
+# -- Input validation helpers --
+
+_POSTUP_ALLOWED = re.compile(
+    r'^(iptables|ip6tables)\s+-[ADI]\s+(FORWARD|POSTROUTING|INPUT)\b.*$'
+)
+
+_VALID_IFACE_NAME = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{0,14}$')
+
+
+def _validate_post_script(script: str, field_name: str) -> str:
+    """Validate PostUp/PostDown commands. Only allow iptables/ip6tables rules."""
+    if not script or not script.strip():
+        return ""
+    commands = [cmd.strip() for cmd in script.split(";") if cmd.strip()]
+    for cmd in commands:
+        if not _POSTUP_ALLOWED.match(cmd):
+            raise ValueError(
+                f"{field_name} contains disallowed command: {cmd[:80]}. "
+                "Only iptables/ip6tables rules allowed."
+            )
+    return script
+
+
+def _validate_interface_name(name: str) -> str:
+    """Validate interface name. Must be alphanumeric, start with letter, max 15 chars."""
+    name = name.strip()
+    if not _VALID_IFACE_NAME.match(name):
+        raise ValueError(
+            "Interface name must start with a letter, contain only letters/numbers/underscore, "
+            "and be 1-15 characters long"
+        )
+    return name
 
 router = APIRouter(prefix="/wg", tags=["WireGuard"])
 
@@ -102,6 +137,20 @@ async def list_interfaces():
 @router.post("/interfaces", status_code=201, dependencies=[Depends(verify_wireguard)])
 async def create_interface(req: CreateInterfaceRequest):
     from ..config import settings
+
+    # Validate interface name against path traversal / command injection
+    try:
+        req.name = _validate_interface_name(req.name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    # Validate PostUp/PostDown against RCE
+    try:
+        req.post_up = _validate_post_script(req.post_up, "post_up")
+        req.post_down = _validate_post_script(req.post_down, "post_down")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
     existing = db.fetchone("SELECT id FROM wg_interfaces WHERE name = %s", (req.name,))
     if existing:
         raise HTTPException(400, f"Interface {req.name} already exists")
@@ -152,6 +201,15 @@ async def get_interface(iface_id: int):
 
 @router.put("/interfaces/{iface_id}", dependencies=[Depends(verify_wireguard)])
 async def update_interface(iface_id: int, req: UpdateInterfaceRequest):
+    # Validate PostUp/PostDown against RCE
+    try:
+        if req.post_up is not None:
+            req.post_up = _validate_post_script(req.post_up, "post_up")
+        if req.post_down is not None:
+            req.post_down = _validate_post_script(req.post_down, "post_down")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
     updates, params = [], []
     if req.dns is not None:
         updates.append("dns = %s")

@@ -163,6 +163,7 @@ def apply_firewall_rules(interface_name: str = "wg0"):
         10.0.0.0/8              -> all traffic to 10.0.0.0/8
         8.8.8.8/32:53/udp      -> udp port 53 to 8.8.8.8
     """
+    print(f"[fw] Rebuilding WG_ACL for {interface_name}")
     # Ensure chain exists
     subprocess.run(["iptables", "-N", "WG_ACL"], capture_output=True)
 
@@ -192,6 +193,7 @@ def apply_firewall_rules(interface_name: str = "wg0"):
             ["iptables", "-A", "FORWARD", "-i", interface_name, "-j", "ACCEPT"],
             capture_output=True, check=True
         )
+        print(f"[fw] FORWARD: added fallback ACCEPT for {interface_name}")
 
     # Get all enabled peers with their ACL profiles
     peers = db.fetchall("SELECT * FROM wg_peers WHERE enabled = TRUE")
@@ -220,3 +222,4 @@ def apply_firewall_rules(interface_name: str = "wg0"):
             ["iptables", "-A", "WG_ACL", "-s", peer_ip, "-j", "DROP"],
             capture_output=True
         )
+        print(f"[fw] WG_ACL: {peer_ip} — {len(rules)} rules from profile '{profile.get('name', '?')}' + DROP")

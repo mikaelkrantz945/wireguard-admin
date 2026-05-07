@@ -157,6 +157,7 @@ def _open_peer(peer_ip: str, interface_name: str = "wg0"):
         ["iptables", "-I", chain, "-s", peer_ip, "-j", "ACCEPT"],
         capture_output=True,
     )
+    print(f"[fw] {chain}: opened peer {peer_ip}")
 
 
 def _block_peer(peer_ip: str, interface_name: str = "wg0"):
@@ -169,17 +170,13 @@ def _block_peer(peer_ip: str, interface_name: str = "wg0"):
         )
         if result.returncode != 0:
             break
+    print(f"[fw] {chain}: blocked peer {peer_ip}")
 
 
 def apply_2fa_rules(interface_name: str = "wg0"):
-    """Build the WG_2FA iptables chain for all 2FA-required peers.
-
-    Chain logic:
-    - Peers WITHOUT require_2fa: RETURN (skip, handled by normal ACL)
-    - Peers WITH require_2fa + active session: ACCEPT
-    - Peers WITH require_2fa + no session: allow only access to VPN server, DROP rest
-    """
+    """Build the WG_2FA iptables chain for all 2FA-required peers."""
     chain = f"WG_2FA_{interface_name}"
+    print(f"[fw] Rebuilding {chain} for {interface_name}")
     # Ensure chain exists
     subprocess.run(["iptables", "-N", chain], capture_output=True)
     # Flush only this interface's chain
@@ -234,6 +231,7 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 ["iptables", "-A", chain, "-s", peer_ip, "-j", "ACCEPT"],
                 capture_output=True,
             )
+            print(f"[fw] {chain}: ACCEPT {peer_ip} (authenticated)")
         else:
             unauth_ips.append(peer_ip)
             # Allow traffic to VPN server IP (for captive portal / API access)
@@ -262,6 +260,7 @@ def apply_2fa_rules(interface_name: str = "wg0"):
                 ["iptables", "-A", chain, "-s", peer_ip, "-j", "REJECT", "--reject-with", "icmp-port-unreachable"],
                 capture_output=True,
             )
+            print(f"[fw] {chain}: REJECT {peer_ip} (unauthenticated, mode={tfa_mode})")
 
     if tfa_mode == "captive":
         # NAT: redirect HTTP from unauthenticated peers to captive portal

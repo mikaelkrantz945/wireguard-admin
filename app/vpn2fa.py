@@ -140,36 +140,41 @@ def get_peer_by_ip(peer_ip: str) -> dict | None:
 # -- iptables management --
 
 def _open_peer(peer_ip: str, interface_name: str = "wg0"):
-    """Add iptables ACCEPT rule for authenticated peer in interface-scoped WG_2FA chain."""
+    """Add iptables RETURN rule for authenticated peer in interface-scoped WG_2FA chain.
+
+    RETURN (not ACCEPT) so traffic continues to WG_ACL for ACL enforcement.
+    """
     chain = f"WG_2FA_{interface_name}"
     # Ensure chain exists
     subprocess.run(["iptables", "-N", chain], capture_output=True)
     # Remove existing rules for this IP (avoid duplicates)
-    while True:
-        result = subprocess.run(
-            ["iptables", "-D", chain, "-s", peer_ip, "-j", "ACCEPT"],
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            break
-    # Add ACCEPT
+    for target in ("RETURN", "ACCEPT"):
+        while True:
+            result = subprocess.run(
+                ["iptables", "-D", chain, "-s", peer_ip, "-j", target],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                break
+    # Add RETURN (let WG_ACL handle restrictions)
     subprocess.run(
-        ["iptables", "-I", chain, "-s", peer_ip, "-j", "ACCEPT"],
+        ["iptables", "-I", chain, "-s", peer_ip, "-j", "RETURN"],
         capture_output=True,
     )
-    print(f"[fw] {chain}: opened peer {peer_ip}")
+    print(f"[fw] {chain}: opened peer {peer_ip} (RETURN → ACL)")
 
 
 def _block_peer(peer_ip: str, interface_name: str = "wg0"):
-    """Remove iptables ACCEPT rule for peer from interface-scoped WG_2FA chain."""
+    """Remove iptables RETURN/ACCEPT rules for peer from interface-scoped WG_2FA chain."""
     chain = f"WG_2FA_{interface_name}"
-    while True:
-        result = subprocess.run(
-            ["iptables", "-D", chain, "-s", peer_ip, "-j", "ACCEPT"],
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            break
+    for target in ("RETURN", "ACCEPT"):
+        while True:
+            result = subprocess.run(
+                ["iptables", "-D", chain, "-s", peer_ip, "-j", target],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                break
     print(f"[fw] {chain}: blocked peer {peer_ip}")
 
 
@@ -226,12 +231,12 @@ def apply_2fa_rules(interface_name: str = "wg0"):
         peer_ip = peer["allowed_ips"].split("/")[0]
 
         if peer_ip in active_ips:
-            # Authenticated — ACCEPT all traffic
+            # Authenticated — RETURN to FORWARD chain (let WG_ACL handle restrictions)
             subprocess.run(
-                ["iptables", "-A", chain, "-s", peer_ip, "-j", "ACCEPT"],
+                ["iptables", "-A", chain, "-s", peer_ip, "-j", "RETURN"],
                 capture_output=True,
             )
-            print(f"[fw] {chain}: ACCEPT {peer_ip} (authenticated)")
+            print(f"[fw] {chain}: RETURN {peer_ip} (authenticated, ACL applies)")
         else:
             unauth_ips.append(peer_ip)
             # Allow traffic to VPN server IP (for captive portal / API access)

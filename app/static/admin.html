@@ -446,11 +446,12 @@ tr:hover{background:#1c1f26}
     <h2>Import Users — <span id="importIntegName"></span></h2>
     <div class="toolbar" style="margin-bottom:.5rem">
       <select id="importIface"></select>
-      <select id="importGroup"></select>
+      <label style="font-size:.8rem;color:#8b949e;margin-left:.5rem">Default group:</label>
+      <select id="importGroupDefault" onchange="applyDefaultGroup()"></select>
       <button class="btn btn-sm btn-secondary" onclick="toggleAllImport()">Select All</button>
     </div>
     <div style="max-height:400px;overflow-y:auto">
-      <table><thead><tr><th style="width:30px"></th><th>Name</th><th>Email</th><th>OU</th><th>Status</th></tr></thead><tbody id="importUsersTable"></tbody></table>
+      <table><thead><tr><th style="width:30px"></th><th>Name</th><th>Email</th><th>OU</th><th>Group</th><th>Status</th></tr></thead><tbody id="importUsersTable"></tbody></table>
     </div>
     <p id="importResult" style="margin-top:.5rem"></p>
     <div class="actions">
@@ -1245,7 +1246,8 @@ async function showImportUsers(id,name){
     api('/wg/groups').then(r=>r.ok?r.json():[]),
   ]);
   document.getElementById('importIface').innerHTML=ifaces.map(i=>`<option value="${i.id}">${esc(i.name)} (${esc(i.address)})</option>`).join('');
-  document.getElementById('importGroup').innerHTML='<option value="0">(No group)</option>'+grps.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  window._importGroupOpts='<option value="0">(No group)</option>'+grps.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  document.getElementById('importGroupDefault').innerHTML=window._importGroupOpts;
   showModal('importUsersModal');
   // Fetch users
   const r=await api(`/integrations/${id}/users`);
@@ -1255,8 +1257,13 @@ async function showImportUsers(id,name){
   document.getElementById('importUsersTable').innerHTML=_importUsers.length?_importUsers.map((u,i)=>`<tr>
     <td><input type="checkbox" class="import-cb" data-idx="${i}" ${u.already_imported?'disabled':'checked'}></td>
     <td>${esc(u.firstname)} ${esc(u.lastname)}</td><td>${esc(u.email)}</td><td class="mono">${esc(u.org_unit)||'/'}</td>
+    <td><select class="import-group" data-idx="${i}" style="padding:2px 4px;background:#0f1117;border:1px solid #333;border-radius:4px;color:#e1e4e8;font-size:.8rem"${u.already_imported?' disabled':''}>${window._importGroupOpts}</select></td>
     <td>${u.already_imported?badge('imported','pending'):badge('new','enabled')}</td>
-  </tr>`).join(''):'<tr><td colspan="5" class="empty">No users found</td></tr>';
+  </tr>`).join(''):'<tr><td colspan="6" class="empty">No users found</td></tr>';
+}
+function applyDefaultGroup(){
+  const val=document.getElementById('importGroupDefault').value;
+  document.querySelectorAll('.import-group:not(:disabled)').forEach(s=>s.value=val);
 }
 
 function toggleAllImport(){
@@ -1267,15 +1274,17 @@ function toggleAllImport(){
 
 async function doImportUsers(){
   const ifaceId=parseInt(document.getElementById('importIface').value);
-  const groupId=parseInt(document.getElementById('importGroup').value)||0;
   const selected=[];
   document.querySelectorAll('.import-cb:checked').forEach(cb=>{
-    const u=_importUsers[parseInt(cb.dataset.idx)];
-    if(u&&!u.already_imported)selected.push({email:u.email,firstname:u.firstname,lastname:u.lastname});
+    const idx=parseInt(cb.dataset.idx);
+    const u=_importUsers[idx];
+    const groupSel=document.querySelector(`.import-group[data-idx="${idx}"]`);
+    const groupId=groupSel?parseInt(groupSel.value)||0:0;
+    if(u&&!u.already_imported)selected.push({email:u.email,firstname:u.firstname,lastname:u.lastname,group_id:groupId});
   });
   if(!selected.length){document.getElementById('importResult').innerHTML='<span class="err">No users selected</span>';return}
   document.getElementById('importResult').innerHTML='<span style="color:#8b949e">Importing...</span>';
-  const r=await api(`/integrations/${_currentIntegId}/import`,{method:'POST',body:JSON.stringify({interface_id:ifaceId,group_id:groupId,users:selected})});
+  const r=await api(`/integrations/${_currentIntegId}/import`,{method:'POST',body:JSON.stringify({interface_id:ifaceId,group_id:0,users:selected})});
   if(r.ok){
     const res=await r.json();
     document.getElementById('importResult').innerHTML=`<span class="ok">${res.imported} users imported</span>`;
